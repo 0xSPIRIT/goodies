@@ -1,8 +1,10 @@
 // TODO:
-//  - Click on link to open
+//  x Click on link to open
+//  x Use a config file in c:\users\<USER>\appdata\local\goodies.cfg
+//  - Right click item to open context menu.
+//     - Edit, Edit description, add child link, insert link
 //  - Click and drag to select multiple, then
 //      - Hit enter to open multiple.
-//  - Button to add new link(s)
 //  - Auto-formats new links as separate items.
 //  - Saves to file (file open menu)
 //  - Customization options
@@ -10,13 +12,13 @@
 //      - Font & Size
 //      - Colors
 //      - Browser
-//  - Right click item to open context menu.
 //  - Click on description to edit it
 //
 
 #define _CRT_SECURE_NO_WARNINGS
-#include <windows.h>
 #include <assert.h>
+
+#include <shlobj_core.h>
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
@@ -27,32 +29,86 @@
 #include "util.cpp"
 
 #define PAD 32
+#define BROWSER "chrome"
 
 struct Link {
     int id;
     char link[MAX_STRING_SIZE];
     char description[MAX_STRING_SIZE];
-    bool highlighted;
+    bool highlighted, selected;
+    bool editing; // Are we currently editing?
     SDL_Rect link_visible_rect,
-             desc_visible_rect; // Gets set upon drawing.
+    desc_visible_rect; // Gets set upon drawing.
     Link *next; // Next link at the same level
     Link *prev; // Previous link at the same level
     Link *child; // Next child link.
     Link *parent; // Parent link
 };
 
-static Link *start_link = NULL;
-static Link *curr_link = NULL; // The top-level thing.
-int link_count = 0;
+enum State {
+    NORMAL, // Normal shit
+    EDITING_NAME,
+    EDITING_DESC
+};
+
+static int state = State::NORMAL;
+
+static Link *start_link = null;
+static Link *curr_link = null; // The top-level thing.
+static Link *editing_link = null;
+
+struct Hover {
+    Link *link;
+    int what_editing; // State::EDITING_NAME or State::EDITING_DESC
+};
+static Hover hover = {};
+
+static int link_count = 0;
+
+static char filepath[MAX_PATH] = {};
+
+static float view_y = 0, view_to_y = 0;
+static float scroll_speed = 60;
+static float scroll_t = 0.25f; // The t value used in the scroll lerp
 
 static SDL_Window *window = null;
 static SDL_Renderer *renderer = null;
+static SDL_Texture *plus = null;
+static int plus_w, plus_h;
+
+static int mx, my;
 
 static int window_width = 960, window_height = 960;
+static bool mouse_clicked = false;
+static const Uint8 *keys = null;
 
 static TTF_Font *font = null;
 
-Link *AddChildLink(Link *parent, const char *link, const char *description) {
+#include "interface.cpp"
+
+static void FreeLinks(Link *start) {
+    if (!start) return;
+    
+    Link *next = null;
+    for (Link *a = start;
+         a;
+         a = next)
+    {
+        next = a->next;
+        FreeLinks(a->child);
+        free(a);
+    }
+}
+
+static void OpenLinks(Link *links[], int lc) {
+    char message[MAX_STRING_SIZE*2] = {};
+    sprintf(message, "%s -incognito", BROWSER);
+    for (int i = 0; i < lc; i++)
+        sprintf(message, "%s %s", message, links[i]->link);
+    system(message);
+}
+
+static Link *AddChildLink(Link *parent, const char *link, const char *description) {
     Link *new_link = null;
     
     if (!parent) {
@@ -90,16 +146,19 @@ Link *AddChildLink(Link *parent, const char *link, const char *description) {
     return new_link;
 }
 
-int DrawLink(Link *link, int x, int y) {
+static int DrawLink(Link *link, int x, int y) {
     int link_w = 0;
     int height = 0;
     
+    int end_x = 0;
+    
     { // Link
         TextDrawData data = {};
-        data.id = link->id*2;
+        sprintf(data.id, "link %d", link->id);
         strcpy(data.string, link->link);
         data.x = x;
-        data.y = y;
+        data.y = y - (int)view_y;
+        data.wrapped = true;
         data.font = font;
         data.force_redraw = false;
         data.wrap_width = window_width-PAD;
@@ -108,9 +167,14 @@ int DrawLink(Link *link, int x, int y) {
         TextDraw(renderer, &data);
         
         link->link_visible_rect = SDL_Rect{
-            x, y,
+            data.x, data.y,
             data.w, data.h
         };
+        
+        if (state == EDITING_NAME && editing_link == link) {
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+            SDL_RenderDrawRect(renderer, &link->link_visible_rect);
+        }
         
         link_w += data.w + 16;
         height = data.h;
@@ -118,10 +182,10 @@ int DrawLink(Link *link, int x, int y) {
     
     { // Description
         TextDrawData data = {};
-        data.id = link->id*2+1;
+        sprintf(data.id, "desc %d", link->id);
         strcpy(data.string, link->description);
         data.x = x + link_w;
-        data.y = y;
+        data.y = y - (int)view_y;
         data.font = font;
         data.force_redraw = false;
         data.wrap_width = window_width - PAD - link_w;
@@ -130,22 +194,66 @@ int DrawLink(Link *link, int x, int y) {
         TextDraw(renderer, &data);
         
         link->desc_visible_rect = SDL_Rect{
-            x, y,
+            data.x, data.y,
             data.w, data.h
         };
+        
+        if (state == EDITING_DESC && editing_link == link) {
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+            SDL_RenderDrawRect(renderer, &link->desc_visible_rect);
+        }
+        
+        end_x = data.x + data.w + 16;
         
         if (data.h > height) height = data.h;
     }
     
-    if (link->highlighted) {
+    if (link->next == null) {
+        if (link->parent) {
+            Button b = {plus, plus_w, plus_h, false};
+            if (TickButton(&b, end_x, y-plus_h/2+height/2)) {
+                link->next = (Link*)calloc(1, sizeof(Link));
+                link->next->prev = link;
+                link->next->parent = link->parent;
+                link->next->editing = true;
+                link->next->id = 2*link_count;
+                editing_link = link->next;
+                
+                char *clipboard = SDL_GetClipboardText();
+                if (clipboard){
+                    // clean the text
+                    char *s = clipboard;
+                    int i = 0;
+                    while (*s){
+                        if (*s == '\n' || *s == '\r' || *s == '\t') {
+                            ++s;
+                            continue;
+                        }
+                        editing_link->link[i++] = *s;
+                        ++s;
+                    }
+                    editing_link->link[i] = 0;
+                    
+                    SDL_free(clipboard);
+                }
+                
+                state = State::EDITING_NAME;
+            }
+        }
+    }
+    
+    if (hover.link == link && link->highlighted) {
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderDrawRect(renderer, &link->link_visible_rect);
+        if (hover.what_editing == State::EDITING_NAME)
+            SDL_RenderDrawRect(renderer, &link->link_visible_rect);
+        else if (hover.what_editing == State::EDITING_DESC)
+            SDL_RenderDrawRect(renderer, &link->desc_visible_rect);
     }
     
     return height;
 }
 
-void SetAllLinksNotHighlighted(Link *start) {
+static void SetAllLinksNotHighlighted(Link *start) {
     if (!start) return;
     
     for (Link *a = start;
@@ -158,24 +266,27 @@ void SetAllLinksNotHighlighted(Link *start) {
 }
 
 // Find link that you're clicking and return it.
-Link *FindClickedLink(Link *start, int mx, int my) {
-    if (!start) return null;
+static Hover FindClickedLink(Link *start) {
+    if (!start) return {};
     
     for (Link *a = start;
          a;
          a = a->next)
     {
         if (PointIntersectsWithRect({mx, my}, a->link_visible_rect)) {
-            return a;
+            return {a, State::EDITING_NAME};
         }
-        Link *result = FindClickedLink(a->child, mx, my);
-        if (result) return result;
+        if (PointIntersectsWithRect({mx, my}, a->desc_visible_rect)) {
+            return {a, State::EDITING_DESC};
+        }
+        Hover result = FindClickedLink(a->child);
+        if (result.link) result;
     }
     
-    return null;
+    return {};
 }
 
-int DrawLinkAndChildLinks(Link *link, int x, int y) {
+static int DrawLinkAndChildLinks(Link *link, int x, int y) {
     if (!link) return 0;
     
     int cumh = 0;
@@ -190,9 +301,57 @@ int DrawLinkAndChildLinks(Link *link, int x, int y) {
     return cumh;
 }
 
-int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    (void)hInstance,hPrevInstance,lpCmdLine,nCmdShow;
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
+static inline char *GetBufferFromState(int s) {
+    char *buffer = null;
+    if (s == State::EDITING_NAME) {
+        assert(editing_link);
+        buffer = editing_link->link;
+    } else if (s == State::EDITING_DESC) {
+        assert(editing_link);
+        buffer = editing_link->description;
+    }
+    return buffer;
+}
+
+static void WriteLinksToFile(FILE *fp, Link *start) {
+    if (!start) return;
+    
+    for (Link *a = start;
+         a;
+         a = a->next)
+    {
+        fprintf(fp, "%s|%s\n", a->link, a->description);
+        WriteLinksToFile(fp, start->child);
+    }
+}
+
+static void SaveToFile() {
+    FILE *fp = fopen(filepath, "w");
+    WriteLinksToFile(fp, start_link);
+    fclose(fp);
+}
+
+int main() {
+    char path[MAX_PATH]={};
+    
+    char cwd[MAX_PATH]={};
+    GetCurrentDirectory(MAX_PATH, cwd);
+             
+    SHGetFolderPathA(null, CSIDL_APPDATA, null, 0, path);
+    sprintf(path, "%s\\goodies.cfg", path);
+    FILE *a = fopen(path, "r");
+    
+    if (!a) {
+        NewFile((char*)filepath);
+        a = fopen(path, "w");
+        
+        fprintf(a, "%s", filepath);
+    } else {
+        fscanf(a, "%s", filepath);
+    }
+    fclose(a);
+    
+    SetCurrentDirectory(cwd); // Windows is horrible and resets our CWD
     
     SDL_Init(SDL_INIT_VIDEO);
     TTF_Init();
@@ -207,10 +366,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     
     renderer = SDL_CreateRenderer(window,
                                   -1,
-                                  0);
+                                  SDL_RENDERER_PRESENTVSYNC);
     assert(renderer);
     
-    FILE *fp = fopen("d:/notes/test_goodies.txt", "r");
+    SDL_Surface *surf = SDL_LoadBMP("plus.bmp");
+    plus = SDL_CreateTextureFromSurface(renderer, surf);
+    plus_w = surf->w;
+    plus_h = surf->h;
+    SDL_FreeSurface(surf);
+    
+    FILE *fp = fopen(filepath, "r");
     while (!feof(fp)) {
         char buffer[MAX_STRING_SIZE] = {};
         fgets(buffer, MAX_STRING_SIZE, fp);
@@ -219,10 +384,26 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         if (buffer[last] == '\n')
             buffer[last] = 0;
         
-        Link *new_link = AddChildLink(NULL, buffer, "Description");
-        AddChildLink(new_link, "Sublink A", "Description");
-        AddChildLink(new_link, "Sublink B", "Description 1");
-        AddChildLink(new_link, "Sublink C", "Description 2");
+        // Determine between the link itself and description
+        
+        size_t len = strlen(buffer);
+        int pipe = -1;
+        for (int i = 0; i < len; i++) {
+            if (buffer[i] == '|') {
+                pipe = i;
+                break;
+            }
+        }
+        
+        if (pipe == -1) {
+            AddChildLink(null, buffer, "");
+        } else {
+            char link[MAX_STRING_SIZE] = {};
+            char *desc;
+            strncpy(link, buffer, pipe);
+            desc = buffer+pipe+1;
+            AddChildLink(null, link, desc);
+        }
     }
     fclose(fp);
     
@@ -236,12 +417,55 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     
     while (running) {
         SDL_Event event;
+        mouse_clicked = false;
+        
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
                 case SDL_QUIT: { running = false; } break;
+                case SDL_TEXTINPUT: {
+                    if (state == State::EDITING_NAME) {
+                        assert(editing_link);
+                        strcat(editing_link->link, event.text.text);
+                    } else if (state == State::EDITING_DESC) {
+                        assert(editing_link);
+                        strcat(editing_link->description, event.text.text);
+                    }
+                } break;
                 case SDL_KEYDOWN: {
                     switch (event.key.keysym.sym) {
-                        case SDLK_ESCAPE: { running = false; } break;
+                        case SDLK_ESCAPE: { state = State::NORMAL; editing_link = null; } break;
+                        case SDLK_RETURN: case SDLK_TAB: {
+                            if (state == State::EDITING_NAME) {
+                                state = State::EDITING_DESC;
+                            } else if (state == State::EDITING_DESC) {
+                                state = State::NORMAL;
+                                editing_link = null;
+                            }
+                        } break;
+                        case SDLK_BACKSPACE: {
+                            char *buffer = GetBufferFromState(state);
+                            if (*buffer) {
+                                if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL] || state == State::EDITING_NAME){
+                                    memset(buffer, 0, strlen(buffer));
+                                }
+                                buffer[strlen(buffer)-1]=0;
+                            }
+                        } break;
+                        case SDLK_v: {
+                            char *buffer = GetBufferFromState(state);
+                            if ((state == State::EDITING_NAME || state == State::EDITING_DESC) &&
+                                (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]))
+                            {
+                                char *clipboard = SDL_GetClipboardText();
+                                if (clipboard) {
+                                    strcpy(buffer, clipboard);
+                                    SDL_free(clipboard);
+                                }
+                            }
+                        } break;
+                        case SDLK_s: {
+                            SaveToFile();;
+                        } break;
                     }
                 } break;
                 case SDL_WINDOWEVENT: {
@@ -251,24 +475,44 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                     }
                 } break;
                 case SDL_MOUSEBUTTONDOWN: {
-                    if (event.button.button == SDL_BUTTON_LEFT) {
+                    if (state == State::NORMAL) {
+                        int button = event.button.button;
+                        
+                        if (button == SDL_BUTTON_LEFT)
+                            mouse_clicked = true;
+                        if (button == SDL_BUTTON_LEFT && hover.link) {
+                            if (hover.what_editing == State::EDITING_DESC) {
+                                state = hover.what_editing;
+                                editing_link = hover.link;
+                            } else {
+                                Link *links[] = {hover.link};
+                                OpenLinks(links, 1);
+                            }
+                        } else if (button == SDL_BUTTON_RIGHT && hover.link) {
+                            state = hover.what_editing;
+                            editing_link = hover.link;
+                        }
                     }
+                } break;
+                case SDL_MOUSEWHEEL: {
+                    view_to_y -= scroll_speed * event.wheel.y;
                 } break;
             }
         }
         
-        int mx, my;
-        Uint32 mouse = SDL_GetMouseState(&mx, &my);
-        (void)mouse;
+        SDL_GetMouseState(&mx, &my);
+        keys = SDL_GetKeyboardState(0);
+        
+        view_y = lerp(view_y, view_to_y, scroll_t);
         
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         
         TextDrawData data = {};
-        data.id = link_count;
+        sprintf(data.id, "title");
         strcpy(data.string, "Goodies");
         data.x = PAD;
-        data.y = PAD;
+        data.y = PAD - (int)view_y;
         data.font = title_font;
         data.force_redraw = false;
         data.wrap_width = window_width - PAD*2;
@@ -279,13 +523,25 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         DrawLinkAndChildLinks(start_link, PAD, 2*PAD+data.h);
         
         SetAllLinksNotHighlighted(start_link);
-        Link *link = FindClickedLink(start_link, mx, my);
-        if (link) {
-            link->highlighted = true;
+        if (state == State::NORMAL) {
+            hover = FindClickedLink(start_link);
+            if (hover.link) {
+                hover.link->highlighted = true;
+            }
         }
         
         SDL_RenderPresent(renderer);
     }
+    
+    SaveToFile();
+    
+    for (int i = 0; i < text_cache_count; i++) {
+        if (text_cache[i].texture)
+            SDL_DestroyTexture(text_cache[i].texture);
+    }
+    SDL_DestroyTexture(plus);
+    
+    FreeLinks(start_link);
     
     SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);

@@ -2,11 +2,12 @@
 #define MAX_TEXT_COUNT 2048
 
 struct TextDrawData {
-    size_t id;
+    char id[32];
     char string[MAX_STRING_SIZE];
     int x, y;
     TTF_Font *font;
     bool force_redraw;
+    bool wrapped;
     Uint32 wrap_width;
     
     SDL_Color color;
@@ -18,9 +19,9 @@ struct TextDrawData {
 static TextDrawData text_cache[MAX_TEXT_COUNT] = {};
 static int text_cache_count = 0;
 
-static TextDrawData *FindTextDataInCache(size_t id) {
+static TextDrawData *FindTextDataInCache(char id[32]) {
     for (int i = 0; i < text_cache_count; i++) {
-        if (text_cache[i].id == id) return &text_cache[i];
+        if (strcmp(text_cache[i].id, id) == 0) return &text_cache[i];
     }
     return null;
 }
@@ -30,6 +31,8 @@ static void AddTextDataToCache(TextDrawData *a) {
 }
 
 static bool HasTextDataChanged(TextDrawData *a, TextDrawData *b) {
+    if (a->font != b->font) return true;
+    if (a->wrapped != b->wrapped) return true;
     if (a->wrap_width != b->wrap_width) return true;
     if (strcmp(a->string, b->string) != 0) return true;
     if (memcmp(&a->color, &b->color, sizeof(SDL_Color)) != 0) return true;
@@ -61,16 +64,31 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
         return;
     }
     
-    SDL_Surface *surface = TTF_RenderText_Blended_Wrapped(data->font,
-                                                          data->string,
-                                                          data->color,
-                                                          data->wrap_width);
+    if (cache_object && cache_object->texture) {
+        SDL_DestroyTexture(cache_object->texture);
+    }
+    
+    SDL_Surface *surface = null;
+    
+    if (data->wrapped) {
+        surface = TTF_RenderText_Blended_Wrapped(data->font,
+                                                 data->string,
+                                                 data->color,
+                                                 data->wrap_width);
+    } else {
+        surface = TTF_RenderText_Blended(data->font,
+                                         data->string,
+                                         data->color);
+    }
+    
     if (!surface) {
         // Place dummy values as the width and height,
         // so it'll appear as an empty line, and not
         // draw nothing.
         TTF_SizeText(data->font, "A", &data->w, &data->h);
         data->texture = null;
+        if (cache_object)
+            *cache_object = *data;
         return;
     }
     SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
@@ -101,4 +119,25 @@ inline static bool PointIntersectsWithRect(SDL_Point a, SDL_Rect r) {
         a.x <= r.x+r.w && a.y <= r.y+r.h)
         return true;
     return false;
+}
+
+inline static float lerp(float a, float b, float t) {
+    return a+(b-a)*t;
+}
+
+inline static void NewFile(char *out) {
+    OPENFILENAME ofn = {};
+    char fileName[MAX_PATH] = "";
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(OPENFILENAME);
+    ofn.hwndOwner = null;
+    ofn.lpstrFilter = "*.txt";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_EXPLORER;
+    
+    if (GetOpenFileName(&ofn))
+        strcpy(out, fileName);
+    else
+        exit(0);
 }
