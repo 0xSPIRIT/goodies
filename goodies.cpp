@@ -48,7 +48,8 @@ struct Link {
 enum State {
     NORMAL, // Normal shit
     EDITING_NAME,
-    EDITING_DESC
+    EDITING_DESC,
+    RIGHT_CLICK
 };
 
 static int state = State::NORMAL;
@@ -59,7 +60,7 @@ static Link *editing_link = null;
 
 struct Hover {
     Link *link;
-    int what_editing; // State::EDITING_NAME or State::EDITING_DESC
+    State what_editing; // State::EDITING_NAME or State::EDITING_DESC
 };
 static Hover hover = {};
 
@@ -85,6 +86,8 @@ static const Uint8 *keys = null;
 static TTF_Font *font = null;
 
 #include "interface.cpp"
+
+static Menu menu = {};
 
 static void FreeLinks(Link *start) {
     if (!start) return;
@@ -210,7 +213,10 @@ static int DrawLink(Link *link, int x, int y) {
     
     if (link->next == null) {
         if (link->parent) {
-            Button b = {plus, plus_w, plus_h, false};
+            Button b = {};
+            b.texture = plus;
+            b.w = plus_w;
+            b.h = plus_h;
             if (TickButton(&b, end_x, y-plus_h/2+height/2)) {
                 link->next = (Link*)calloc(1, sizeof(Link));
                 link->next->prev = link;
@@ -369,6 +375,8 @@ int main() {
                                   SDL_RENDERER_PRESENTVSYNC);
     assert(renderer);
     
+    menu = MakeMenu();
+    
     SDL_Surface *surf = SDL_LoadBMP("plus.bmp");
     plus = SDL_CreateTextureFromSurface(renderer, surf);
     plus_w = surf->w;
@@ -433,7 +441,7 @@ int main() {
                 } break;
                 case SDL_KEYDOWN: {
                     switch (event.key.keysym.sym) {
-                        case SDLK_ESCAPE: { state = State::NORMAL; editing_link = null; } break;
+                        case SDLK_ESCAPE: { state = State::NORMAL; editing_link = null; menu.active = false; } break;
                         case SDLK_RETURN: case SDLK_TAB: {
                             if (state == State::EDITING_NAME) {
                                 state = State::EDITING_DESC;
@@ -475,9 +483,9 @@ int main() {
                     }
                 } break;
                 case SDL_MOUSEBUTTONDOWN: {
-                    if (state == State::NORMAL) {
-                        int button = event.button.button;
+                    int button = event.button.button;
                         
+                    if (state == State::NORMAL) {
                         if (button == SDL_BUTTON_LEFT)
                             mouse_clicked = true;
                         if (button == SDL_BUTTON_LEFT && hover.link) {
@@ -491,6 +499,21 @@ int main() {
                         } else if (button == SDL_BUTTON_RIGHT && hover.link) {
                             state = hover.what_editing;
                             editing_link = hover.link;
+                        } else if (button == SDL_BUTTON_MIDDLE) {
+                            MenuOperation op;
+                            if (hover.link) {
+                                op.op = OnLink;
+                                op.hover = hover;
+                            } else {
+                                op.op = OutsideLink;
+                                op.hover = {};
+                            }
+                            OpenMenu(&menu, op);
+                        }
+                    } else if (state == State::RIGHT_CLICK) {
+                        if (button == SDL_BUTTON_LEFT) {
+                            menu.active = false;
+                            state = State::NORMAL;
                         }
                     }
                 } break;
@@ -530,6 +553,8 @@ int main() {
             }
         }
         
+        DrawMenu(&menu);
+        
         SDL_RenderPresent(renderer);
     }
     
@@ -541,6 +566,7 @@ int main() {
     }
     SDL_DestroyTexture(plus);
     
+    FreeMenu(&menu);
     FreeLinks(start_link);
     
     SDL_DestroyWindow(window);
