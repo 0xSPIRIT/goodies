@@ -1,22 +1,11 @@
 // TODO:
-//  x Click on link to open
-//  x Use a config file in c:\users\<USER>\appdata\local\goodies.cfg
-//  x Right click item to open context menu.
-//     x Edit, Edit description, add child link, insert link
-//  x Add nested child link support in the file saver
-//  x If you press escape in link add, remove the link.
-//  x Click and drag to select multiple, then
-//      - Hit enter to open multiple.
-//  x Add links at cursor
-//  x Make flashing cursor
-//  x Make no links work properly!
-//  - Fix the memory leak when deleting a link (and its children)
-//  - When you add link, move view to the place
 //  - Customization options (popup menu)
 //      - Description first, then link.
 //      - Font & Size
 //      - Color
 //      - Browser
+//      - Load different goodie file
+//      - Delete config file
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
@@ -32,7 +21,6 @@
 #include "util.cpp"
 
 #define PAD 32
-#define BROWSER "chrome"
 
 struct Link {
     int id;
@@ -54,6 +42,14 @@ enum State {
     EDITING_DESC,
     RIGHT_CLICK
 };
+
+enum Browser {
+    CHROME,
+    FIREFOX
+};
+
+#define BrowserString(X) (X == CHROME ? "chrome" : "firefox")
+Browser browser = FIREFOX;
 
 static int state = State::NORMAL;
 static bool first_edit = false;
@@ -93,6 +89,8 @@ static const Uint8 *keys = null;
 
 static TTF_Font *font = null;
 
+static void FreeLinks(Link *start);
+
 #include "interface.cpp"
 
 static void FreeLinks(Link *start) {
@@ -111,10 +109,16 @@ static void FreeLinks(Link *start) {
 
 static void OpenLinks(Link *links[], int lc) {
     char message[MAX_STRING_SIZE*2] = {};
-    sprintf(message, "%s -incognito", BROWSER);
     for (int i = 0; i < lc; i++)
         sprintf(message, "%s %s", message, links[i]->link);
-    system(message);
+
+    char command[MAX_STRING_SIZE] = {};
+    if (browser == CHROME)
+        sprintf(command, "%s -incognito", message);
+    else if (browser == FIREFOX)
+        sprintf(command, "-private-window \"%s\"", message);
+
+    ShellExecuteA(0, 0, BrowserString(browser), command, 0, SW_SHOWMAXIMIZED);
 }
 
 static Link *AddChildLink(Link *parent, const char *link, const char *description) {
@@ -150,6 +154,7 @@ static Link *AddChildLink(Link *parent, const char *link, const char *descriptio
     new_link->id = link_count++;
     strcpy(new_link->link, link);
     strcpy(new_link->description, description);
+
 
     return new_link;
 }
@@ -469,9 +474,28 @@ int main() {
         NewFile((char*)filepath);
         fa = fopen(config_path, "w");
 
-        fprintf(fa, "%s", filepath);
+        fprintf(fa, "%s\n", filepath);
+        // TODO: Figure out if they use firefox or chrome
+        int result = MessageBox(null, "Do you use chrome?\nOnly chrome and firefox are supported.", "Chrome?", MB_YESNO);
+        if (result == IDYES) {
+            browser = CHROME;
+        } else if (result == IDNO) {
+            browser = FIREFOX;
+        } else {
+            fclose(fa);
+            DeleteFileA(config_path);
+            exit(1);
+        }
+        fprintf(fa, "%d", browser == CHROME);
     } else {
-        fscanf(fa, "%s", filepath);
+        fscanf(fa, "%s\n", filepath);
+        int use_chrome = false;
+        fscanf(fa, "%d", &use_chrome);
+        if (use_chrome) {
+            browser = CHROME;
+        } else {
+            browser = FIREFOX;
+        }
     }
     fclose(fa);
 
@@ -563,12 +587,14 @@ int main() {
                             }
                         } break;
                         case SDLK_BACKSPACE: {
-                            char *buffer = GetBufferFromState(state);
-                            if (*buffer) {
-                                if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]) {
-                                    memset(buffer, 0, strlen(buffer));
+                            if (state != State::NORMAL) {
+                                char *buffer = GetBufferFromState(state);
+                                if (*buffer) {
+                                    if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]) {
+                                        memset(buffer, 0, strlen(buffer));
+                                    }
+                                    buffer[strlen(buffer)-1]=0;
                                 }
-                                buffer[strlen(buffer)-1]=0;
                             }
                         } break;
                         case SDLK_v: {
@@ -705,11 +731,13 @@ int main() {
             }
         }
 
-        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(renderer, 70, 120, 200, 50);
-        SDL_RenderFillRect(renderer, &selection.box);
-        SDL_SetRenderDrawColor(renderer, 70, 120, 250, 255);
-        SDL_RenderDrawRect(renderer, &selection.box);
+        if (selection.isopen()) {
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(renderer, 70, 120, 200, 50);
+            SDL_RenderFillRect(renderer, &selection.box);
+            SDL_SetRenderDrawColor(renderer, 70, 120, 250, 255);
+            SDL_RenderDrawRect(renderer, &selection.box);
+        }
 
         DrawMenu(&global_menu);
 

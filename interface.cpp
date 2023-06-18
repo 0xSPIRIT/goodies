@@ -200,21 +200,6 @@ static void menu_edit_description(MenuOperation operation) {
     global_menu.active = false;
 }
 
-void FreeLinkAndChildren(Link *link) {
-    if (!link) return;
-
-    Link *next = null;
-
-    for (Link *a = link;
-         a;
-         a = next)
-    {
-        next = a->next;
-        FreeLinkAndChildren(a->child);
-        free(a);
-    }
-}
-
 static void menu_delete_link(MenuOperation operation) {
     Link *link = operation.hover.link;
     if (link->prev) {
@@ -229,8 +214,8 @@ static void menu_delete_link(MenuOperation operation) {
         link->parent->child = link->next;
         if (link->next) link->next->prev = null;
     }
-    //FreeLinkAndChildren(link);
-    free(link); // TODO: Memory leak
+    FreeLinks(link->child);
+    free(link);
     global_menu.active = false;
     state = State::NORMAL;
 }
