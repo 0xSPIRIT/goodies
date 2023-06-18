@@ -3,11 +3,11 @@
 //  x Use a config file in c:\users\<USER>\appdata\local\goodies.cfg
 //  x Right click item to open context menu.
 //     x Edit, Edit description, add child link, insert link
-//  - Add nested child link support
+//  - Add nested child link support in the file saver
 //  - If you press escape in link add, remove the link.
 //  x Click and drag to select multiple, then
 //      - Hit enter to open multiple.
-//  - Customization options
+//  - Customization options (popup menu)
 //      - Description first, then link.
 //      - Font & Size
 //      - Color
@@ -165,12 +165,12 @@ static int DrawLink(Link *link, int x, int y) {
         data.color = SDL_Color{255, 255, 255, 255};
 
         TextDraw(renderer, &data);
-        
+
         link->link_visible_rect = SDL_Rect{
             data.x, data.y,
             data.w, data.h
         };
-        
+
         if (state == EDITING_NAME && editing_link == link) {
             SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
             SDL_RenderDrawRect(renderer, &link->link_visible_rect);
@@ -209,20 +209,18 @@ static int DrawLink(Link *link, int x, int y) {
     }
 
     if (link->next == null) {
-        if (link->parent) {
-            Button b = {};
-            b.texture = plus;
-            b.w = plus_w;
-            b.h = plus_h;
-            if (TickButton(&b, end_x, y-plus_h/2+height/2).clicked) {
-                MenuOperation operation = {};
-                operation.op = OnLink;
-                operation.hover.link = link;
-                menu_insert_link(operation);
-            }
+        Button b = {};
+        b.texture = plus;
+        b.w = plus_w;
+        b.h = plus_h;
+        if (TickButton(&b, end_x, y-plus_h/2+height/2).clicked) {
+            MenuOperation operation = {};
+            operation.op = OnLink;
+            operation.hover.link = link;
+            menu_insert_link(operation);
         }
     }
-    
+
     if (hover.link == link && link->highlighted) {
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         if (hover.what_editing == State::EDITING_NAME)
@@ -319,23 +317,35 @@ static void SaveToFile() {
 
 static void LoadFile(const char *file) {
     FILE *fp = fopen(file, "r");
-    
+
     Link *prevlink = null;
-    
+
     while (!feof(fp)) {
         int layer;
-        
+
         char link_and_desc[MAX_STRING_SIZE]={};
-        fscanf(fp, "%d:%[^\n]\n", &layer, link_and_desc);
-        
+
+        unsigned long pos = ftell(fp);
+        char c;
+        fscanf(fp, "%c", &c);
+
+        fseek(fp, pos, SEEK_SET);
+
+        if (c >= '0' && c <= '9') {
+            fscanf(fp, "%d:%[^\n]\n", &layer, link_and_desc);
+        } else { // Compatibility with raw files with links not in our format
+            fscanf(fp, "%[^\n]\n", link_and_desc);
+            layer=0;
+        }
+
         size_t last = strlen(link_and_desc)-1;
         if (link_and_desc[last] == '\n')
             link_and_desc[last] = 0;
-        
+
         assert(link_and_desc[0] != 0);
-        
+
         // Determine between the link itself and description
-        
+
         size_t len = strlen(link_and_desc);
         int pipe = -1;
         for (int i = 0; i < len; i++) {
@@ -344,21 +354,25 @@ static void LoadFile(const char *file) {
                 break;
             }
         }
-        
-        char link[MAX_STRING_SIZE] = {};
-        char *desc;
-        strncpy(link, link_and_desc, pipe);
-        desc = link_and_desc+pipe+1;
-        
-        Link *a = null;
-        if (layer == 0) {
-            a = AddChildLink(null, link, desc);
-            prevlink = a;
+
+        if (pipe == -1) { // Compatibility with raw files with links not in our format
+            AddChildLink(null, link_and_desc, "");
         } else {
-            a = AddChildLink(prevlink, link, desc);
+            char link[MAX_STRING_SIZE] = {};
+            char *desc;
+            strncpy(link, link_and_desc, pipe);
+            desc = link_and_desc+pipe+1;
+
+            Link *a = null;
+            if (layer == 0) {
+                a = AddChildLink(null, link, desc);
+                prevlink = a;
+            } else {
+                a = AddChildLink(prevlink, link, desc);
+            }
         }
     }
-    
+
     fclose(fp);
 }
 
@@ -493,10 +507,10 @@ int main() {
                 } break;
                 case SDL_MOUSEBUTTONUP: {
                     int button = event.button.button;
-                    
+
                     if (button == SDL_BUTTON_LEFT)
                         mouse_clicked = true;
-                    
+
                     if (!selection.isopen() && state == State::NORMAL) {
                         if (button == SDL_BUTTON_LEFT && hover.link) {
                             if (hover.what_editing == State::EDITING_DESC) {
@@ -537,13 +551,13 @@ int main() {
 
         Uint32 mouse = SDL_GetMouseState(&mx, &my);
         keys = SDL_GetKeyboardState(0);
-        
+
         if (selection.box.x != -1) {
             selection.box.w = mx - selection.box.x;
             selection.box.h = my - selection.box.y;
-            
+
             SetSelectionLinks(start_link);
-            
+
             if (!(mouse & SDL_BUTTON_LEFT)) {
                 // Execute some action.
                 selection.box.x = selection.box.y = -1;
@@ -551,7 +565,7 @@ int main() {
                 //SetAllLinksNotHighlighted(start_link);
             }
         }
-        
+
         view_y = lerp(view_y, view_to_y, scroll_t);
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -578,7 +592,7 @@ int main() {
                 hover.link->highlighted = true;
             }
         }
-        
+
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(renderer, 70, 120, 200, 50);
         SDL_RenderFillRect(renderer, &selection.box);
