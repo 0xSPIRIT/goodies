@@ -1,4 +1,5 @@
 struct Selection {
+    int stored_x, stored_y;
     SDL_Rect box;
     Link *links[1024];
     int link_count;
@@ -7,7 +8,7 @@ struct Selection {
         return box.w == box.h == 0;
     }
 };
-Selection selection = { {-1, -1, 0, 0} };
+Selection selection = { -1, -1, {-1, -1, 0, 0} };
 
 static void SetSelectionLinks(Link *start) {
     for (int i = 0; i < 1024; i++)
@@ -113,9 +114,9 @@ static void MenuOff(Menu *menu) {
 // Hooks
 void menu_edit_link(MenuOperation operation) {
     global_menu.active = false;
-    printf("%d, %s\n", operation.hover.what_editing, operation.hover.link->link);
     state = operation.hover.what_editing;
     editing_link = operation.hover.link;
+    editing_link->editing = true;
     first_edit = true;
 }
 
@@ -132,44 +133,55 @@ static void menu_add_child_link(MenuOperation operation) {
     global_menu.active = false;
 }
 
-static void menu_insert_link(MenuOperation operation) {
+static void menu_insert_link(MenuOperation operation, bool after) {
     Link *link = operation.hover.link;
 
-    Link *n = null;
-    n = (Link*)calloc(1, sizeof(Link));
-    if (link->next) {
-        Link *temp = link->next;
-        link->next = n;
-        link->next->next = temp;
-    } else {
-        link->next = n;
-    }
-    link->next->prev = link;
-    link->next->parent = link->parent;
-    link->next->editing = true;
-    link->next->id = 2*link_count;
-    editing_link = link->next;
-
-    char *clipboard = SDL_GetClipboardText();
-    if (clipboard){
-        // clean the text
-        char *s = clipboard;
-        int i = 0;
-        while (*s){
-            if (*s == '\n' || *s == '\r' || *s == '\t') {
-                ++s;
-                continue;
-            }
-            editing_link->link[i++] = *s;
-            ++s;
+    if (after) {
+        Link *n = null;
+        n = (Link*)calloc(1, sizeof(Link));
+        if (link->next) {
+            Link *temp = link->next;
+            link->next = n;
+            link->next->next = temp;
+        } else {
+            link->next = n;
         }
-        editing_link->link[i] = 0;
-
-        SDL_free(clipboard);
+        link->next->prev = link;
+        link->next->parent = link->parent;
+        link->next->editing = true;
+        link->next->id = link_count++;
+        editing_link = link->next;
+    } else {
+        Link *n = null;
+        n = (Link*)calloc(1, sizeof(Link));
+        if (link->prev) {
+            Link *old_next = link->prev->next;
+            link->prev->next = n;
+            n->next = old_next;
+            link->prev = n;
+        } else if (link->parent) {
+            n->next = link;
+            n->parent = link->parent;
+            link->parent->child = n;
+            link->prev = n;
+        } else {
+            n->next = start_link;
+            start_link->prev = n;
+            start_link = n;
+        }
+        n->editing = true;
+        editing_link = n;
     }
-
     state = State::EDITING_NAME;
     global_menu.active = false;
+}
+
+static void menu_insert_link_after(MenuOperation operation) {
+    menu_insert_link(operation, true);
+}
+
+static void menu_insert_link_before(MenuOperation operation) {
+    menu_insert_link(operation, false);
 }
 
 static void menu_add_link(MenuOperation operation) {
@@ -188,6 +200,21 @@ static void menu_edit_description(MenuOperation operation) {
     global_menu.active = false;
 }
 
+void FreeLinkAndChildren(Link *link) {
+    if (!link) return;
+
+    Link *next = null;
+
+    for (Link *a = link;
+         a;
+         a = next)
+    {
+        next = a->next;
+        FreeLinkAndChildren(a->child);
+        free(a);
+    }
+}
+
 static void menu_delete_link(MenuOperation operation) {
     Link *link = operation.hover.link;
     if (link->prev) {
@@ -195,13 +222,15 @@ static void menu_delete_link(MenuOperation operation) {
         if (link->next) link->next->prev = link->prev;
     } else if (link == start_link) {
         start_link = start_link->next;
-        start_link->prev = null;
+        if (start_link)
+            start_link->prev = null;
     } else {
         assert(link->parent);
         link->parent->child = link->next;
         if (link->next) link->next->prev = null;
     }
-    free(link);
+    //FreeLinkAndChildren(link);
+    free(link); // TODO: Memory leak
     global_menu.active = false;
     state = State::NORMAL;
 }
@@ -246,15 +275,16 @@ static void OpenMenu(Menu *menu, MenuOperation op) {
                     {"Edit", menu_edit_link},
                     {"Edit Description", menu_edit_description},
                     {"Add Child Link", menu_add_child_link},
-                    {"Insert Link", menu_insert_link},
+                    {"Insert Link After", menu_insert_link_after},
+                    {"Insert Link Before", menu_insert_link_before},
                     {"Delete Link", menu_delete_link}
                 };
-                SetMenuOptions(menu, options, 5);
+                SetMenuOptions(menu, options, 6);
             }
         } break;
         case MenuOp::OutsideLink: {
             MenuOption options[] = {
-                {"Add Link", menu_add_link} };
+                {"Add Link To End", menu_add_link} };
             SetMenuOptions(menu, options, 1);
         } break;
     }
@@ -291,7 +321,7 @@ static void DrawMenu(Menu *menu) {
         b.w = w;
         b.h = h;
 
-        ButtonResult r = TickButton(&b, menu->x+data.x, menu->y+data.y);
+        ButtonResult r = TickButton(&b, menu->x+data.x, menu->y+data.y+(int)view_y);
         if (r.highlighted) {
             data.color = SDL_Color{127,127,127,255};
         }

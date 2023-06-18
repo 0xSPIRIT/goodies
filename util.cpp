@@ -85,7 +85,8 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
         // Place dummy values as the width and height,
         // so it'll appear as an empty line, and not
         // draw nothing.
-        TTF_SizeText(data->font, "A", &data->w, &data->h);
+
+        TTF_SizeText(data->font, "|", &data->w, &data->h);
         data->texture = null;
         if (cache_object)
             *cache_object = *data;
@@ -122,10 +123,10 @@ inline static bool PointIntersectsWithRect(SDL_Point a, SDL_Rect r) {
 }
 
 inline static bool RectIntersectsWithRect(SDL_Rect r1, SDL_Rect r2) {
-    bool noOverlap = r1.x > r2.x+r2.w ||
-        r2.x > r1.x+r1.w ||
-        r1.y > r2.y+r2.h ||
-        r2.y > r1.y+r1.h;
+    bool noOverlap = r1.x >= r2.x+r2.w ||
+        r2.x >= r1.x+r1.w ||
+        r1.y >= r2.y+r2.h ||
+        r2.y >= r1.y+r1.h;
     return !noOverlap;
 }
 

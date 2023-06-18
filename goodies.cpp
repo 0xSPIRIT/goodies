@@ -3,16 +3,20 @@
 //  x Use a config file in c:\users\<USER>\appdata\local\goodies.cfg
 //  x Right click item to open context menu.
 //     x Edit, Edit description, add child link, insert link
-//  - Add nested child link support in the file saver
-//  - If you press escape in link add, remove the link.
+//  x Add nested child link support in the file saver
+//  x If you press escape in link add, remove the link.
 //  x Click and drag to select multiple, then
 //      - Hit enter to open multiple.
+//  x Add links at cursor
+//  x Make flashing cursor
+//  x Make no links work properly!
+//  - Fix the memory leak when deleting a link (and its children)
+//  - When you add link, move view to the place
 //  - Customization options (popup menu)
 //      - Description first, then link.
 //      - Font & Size
 //      - Color
 //      - Browser
-//
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
@@ -54,6 +58,8 @@ enum State {
 static int state = State::NORMAL;
 static bool first_edit = false;
 
+static char config_path[MAX_PATH]={};
+
 static Link *start_link = null;
 static Link *curr_link = null; // The top-level thing.
 static Link *editing_link = null;
@@ -71,6 +77,8 @@ static char filepath[MAX_PATH] = {};
 static float view_y = 0, view_to_y = 0;
 static float scroll_speed = 60;
 static float scroll_t = 0.25f; // The t value used in the scroll lerp
+
+static bool typed_this_frame = false;
 
 static SDL_Window *window = null;
 static SDL_Renderer *renderer = null;
@@ -146,13 +154,53 @@ static Link *AddChildLink(Link *parent, const char *link, const char *descriptio
     return new_link;
 }
 
+// Returns the width of the cursor drawn
+static int DrawCursor(TTF_Font *fnt, int x, int y) {
+    static int width = -1;
+    static int height = -1;
+
+    if (height == -1 || width == -1) {
+        TTF_SizeText(fnt, "|", &width, &height);
+    }
+    width = 2;
+
+    SDL_Rect r = {
+        x, y,
+        width, height
+    };
+
+    double t = SDL_GetTicks()/1000.0;
+    if (typed_this_frame || t - (int)t < 0.5) {
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    } else {
+        return width;
+    }
+    SDL_RenderFillRect(renderer, &r);
+
+    return width;
+}
+
+static bool LinkOutOfView(int x, int y) {
+    (void)x;
+    if (y > view_y+window_height) return true;
+    if (y < view_y) return true;
+    return false;
+}
+
 static int DrawLink(Link *link, int x, int y) {
     int link_w = 0;
     int height = 0;
 
     int end_x = 0;
 
-    { // Link
+    bool was_link_wrapped = false;
+
+    // Move view
+    if (link->editing && LinkOutOfView(x, y)) {
+        view_to_y = (float)(y-window_height/2);
+    }
+
+    if (*link->link || link->editing) { // Link
         TextDrawData data = {};
         sprintf(data.id, "link %d", link->id);
         strcpy(data.string, link->link);
@@ -161,7 +209,7 @@ static int DrawLink(Link *link, int x, int y) {
         data.wrapped = true;
         data.font = font;
         data.force_redraw = false;
-        data.wrap_width = window_width-PAD;
+        data.wrap_width = window_width-PAD*2;
         data.color = SDL_Color{255, 255, 255, 255};
 
         TextDraw(renderer, &data);
@@ -174,18 +222,33 @@ static int DrawLink(Link *link, int x, int y) {
         if (state == EDITING_NAME && editing_link == link) {
             SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
             SDL_RenderDrawRect(renderer, &link->link_visible_rect);
+
+            int cx = data.x+data.w;
+            if (!*link->link) cx -= data.w;
+            DrawCursor(font, cx, data.y);
         }
 
         link_w += data.w + 16;
         height = data.h;
+
+        if (data.w >= window_width-PAD*4) {
+            was_link_wrapped = true;
+        }
+
+        end_x = data.x + data.w + 16;
     }
 
     { // Description
         TextDrawData data = {};
         sprintf(data.id, "desc %d", link->id);
         strcpy(data.string, link->description);
-        data.x = x + link_w;
-        data.y = y - (int)view_y;
+        if (was_link_wrapped) {
+            data.x = x;
+            data.y = y - (int)view_y + height;
+        } else {
+            data.x = x + link_w;
+            data.y = y - (int)view_y;
+        }
         data.font = font;
         data.force_redraw = false;
         data.wrap_width = window_width - PAD - link_w;
@@ -201,11 +264,19 @@ static int DrawLink(Link *link, int x, int y) {
         if (state == EDITING_DESC && editing_link == link) {
             SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
             SDL_RenderDrawRect(renderer, &link->desc_visible_rect);
+
+            int cx = data.x+data.w;
+            if (!*link->description) cx -= data.w;
+            DrawCursor(font, cx, data.y);
         }
 
         end_x = data.x + data.w + 16;
 
-        if (data.h > height) height = data.h;
+        if (!was_link_wrapped) {
+            if (data.h > height) height = data.h;
+        } else {
+            height = height + data.h;
+        }
     }
 
     if (link->next == null) {
@@ -217,7 +288,7 @@ static int DrawLink(Link *link, int x, int y) {
             MenuOperation operation = {};
             operation.op = OnLink;
             operation.hover.link = link;
-            menu_insert_link(operation);
+            menu_insert_link_after(operation);
         }
     }
 
@@ -317,8 +388,16 @@ static void SaveToFile() {
 
 static void LoadFile(const char *file) {
     FILE *fp = fopen(file, "r");
+    if (!fp) {
+        char message[MAX_STRING_SIZE] = {};
+        sprintf(message, "Couldn't load file %s\nExiting...", file);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error!", message, window);
+        DeleteFile(config_path);
+        exit(1);
+    }
 
-    Link *prevlink = null;
+    #define MAX_CHILD_LINKS 128
+    Link *prevlinks[MAX_CHILD_LINKS] = {};
 
     while (!feof(fp)) {
         int layer;
@@ -342,7 +421,7 @@ static void LoadFile(const char *file) {
         if (link_and_desc[last] == '\n')
             link_and_desc[last] = 0;
 
-        assert(link_and_desc[0] != 0);
+        if (link_and_desc[0] == 0) continue;
 
         // Determine between the link itself and description
 
@@ -366,10 +445,10 @@ static void LoadFile(const char *file) {
             Link *a = null;
             if (layer == 0) {
                 a = AddChildLink(null, link, desc);
-                prevlink = a;
             } else {
-                a = AddChildLink(prevlink, link, desc);
+                a = AddChildLink(prevlinks[layer-1], link, desc);
             }
+            prevlinks[layer] = a;
         }
     }
 
@@ -377,18 +456,18 @@ static void LoadFile(const char *file) {
 }
 
 int main() {
-    char path[MAX_PATH]={};
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
 
     char cwd[MAX_PATH]={};
     GetCurrentDirectory(MAX_PATH, cwd);
 
-    SHGetFolderPathA(null, CSIDL_APPDATA, null, 0, path);
-    sprintf(path, "%s\\goodies.cfg", path);
-    FILE *fa = fopen(path, "r");
+    SHGetFolderPathA(null, CSIDL_APPDATA, null, 0, config_path);
+    sprintf(config_path, "%s\\goodies.cfg", config_path);
+    FILE *fa = fopen(config_path, "r");
 
     if (!fa) {
         NewFile((char*)filepath);
-        fa = fopen(path, "w");
+        fa = fopen(config_path, "w");
 
         fprintf(fa, "%s", filepath);
     } else {
@@ -432,14 +511,21 @@ int main() {
 
     bool running = true;
 
+    SDL_Event event = {};
+    bool has_event_queued = false;
     while (running) {
-        SDL_Event event;
         mouse_clicked = false;
+        typed_this_frame = false;
+
+        if (has_event_queued)
+            goto eventloop;
 
         while (SDL_PollEvent(&event)) {
+            eventloop:
             switch (event.type) {
                 case SDL_QUIT: { running = false; } break;
                 case SDL_TEXTINPUT: {
+                    typed_this_frame = true;
                     if (state == State::EDITING_NAME) {
                         assert(editing_link);
                         if (first_edit) {
@@ -453,9 +539,17 @@ int main() {
                     }
                 } break;
                 case SDL_KEYDOWN: {
+                    typed_this_frame = true;
                     switch (event.key.keysym.sym) {
                         case SDLK_ESCAPE: {
                             state = State::NORMAL;
+                            if (editing_link && !*editing_link->link && !*editing_link->description) {
+                                MenuOperation dummy_operation = {
+                                    OnLink,
+                                    {editing_link, State::NORMAL} // State doesn't matter for this op
+                                };
+                                menu_delete_link(dummy_operation);
+                            }
                             editing_link = null;
                             global_menu.active = false;
                         } break;
@@ -464,6 +558,7 @@ int main() {
                                 state = State::EDITING_DESC;
                             } else if (state == State::EDITING_DESC) {
                                 state = State::NORMAL;
+                                editing_link->editing = false;
                                 editing_link = null;
                             }
                         } break;
@@ -483,13 +578,23 @@ int main() {
                             {
                                 char *clipboard = SDL_GetClipboardText();
                                 if (clipboard) {
-                                    strcpy(buffer, clipboard);
+                                    char *s = clipboard;
+                                    size_t count = 0;
+                                    while (*s) {
+                                        if (*s != '\r' && *s != '\t' && *s != '\n' && count<MAX_STRING_SIZE) {
+                                            *buffer++ = *s;
+                                            ++count;
+                                        }
+                                        ++s;
+                                    }
+                                    *buffer = 0;
                                     SDL_free(clipboard);
                                 }
                             }
                         } break;
                         case SDLK_s: {
-                            SaveToFile();;
+                            if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL])
+                                SaveToFile();
                         } break;
                     }
                 } break;
@@ -502,7 +607,9 @@ int main() {
                 case SDL_MOUSEBUTTONDOWN: {
                     if (state == State::NORMAL && selection.box.x == -1) {
                         selection.box.x = mx;
-                        selection.box.y = my;
+                        selection.box.y = my+(int)view_y;
+                        selection.stored_x = selection.box.x;
+                        selection.stored_y = selection.box.y;
                     }
                 } break;
                 case SDL_MOUSEBUTTONUP: {
@@ -526,6 +633,9 @@ int main() {
                             if (hover.link) {
                                 op.op = OnLink;
                                 op.hover = hover;
+                                op.hover.what_editing = State::EDITING_NAME;
+                                // Force it to always be editing name because
+                                // we kinda just want it to say the same thing anyways
                             } else {
                                 op.op = OutsideLink;
                                 op.hover = {};
@@ -552,7 +662,11 @@ int main() {
         Uint32 mouse = SDL_GetMouseState(&mx, &my);
         keys = SDL_GetKeyboardState(0);
 
+        view_y = lerp(view_y, view_to_y, scroll_t);
+
         if (selection.box.x != -1) {
+            selection.box.x = selection.stored_x;
+            selection.box.y = selection.stored_y - (int)view_y;
             selection.box.w = mx - selection.box.x;
             selection.box.h = my - selection.box.y;
 
@@ -565,8 +679,6 @@ int main() {
                 //SetAllLinksNotHighlighted(start_link);
             }
         }
-
-        view_y = lerp(view_y, view_to_y, scroll_t);
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
@@ -602,6 +714,12 @@ int main() {
         DrawMenu(&global_menu);
 
         SDL_RenderPresent(renderer);
+
+        Uint32 flag = SDL_GetWindowFlags(window);
+        if (!(flag & SDL_WINDOW_INPUT_FOCUS)) {
+            SDL_WaitEvent(&event);
+            has_event_queued = true;
+        }
     }
 
     SaveToFile();
