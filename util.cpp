@@ -9,9 +9,9 @@ struct TextDrawData {
     bool force_redraw;
     bool wrapped;
     Uint32 wrap_width;
-    
+
     SDL_Color color;
-    
+
     SDL_Texture *texture; // Out
     int w, h; // Out
 };
@@ -36,14 +36,14 @@ static bool HasTextDataChanged(TextDrawData *a, TextDrawData *b) {
     if (a->wrap_width != b->wrap_width) return true;
     if (strcmp(a->string, b->string) != 0) return true;
     if (memcmp(&a->color, &b->color, sizeof(SDL_Color)) != 0) return true;
-    
+
     return false;
 }
 
 static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
     bool should_redraw = data->force_redraw;
     TextDrawData *cache_object = FindTextDataInCache(data->id);
-    
+
     if (!cache_object) {
         should_redraw = true;
     } else if (!should_redraw) {
@@ -51,7 +51,7 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
         if (has_changed)
             should_redraw = true;
     }
-    
+
     if (!should_redraw) {
         data->w = cache_object->w;
         data->h = cache_object->h;
@@ -63,13 +63,13 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
         SDL_RenderCopy(renderer, data->texture, NULL, &dst);
         return;
     }
-    
+
     if (cache_object && cache_object->texture) {
         SDL_DestroyTexture(cache_object->texture);
     }
-    
+
     SDL_Surface *surface = null;
-    
+
     if (data->wrapped) {
         surface = TTF_RenderText_Blended_Wrapped(data->font,
                                                  data->string,
@@ -80,7 +80,7 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
                                          data->string,
                                          data->color);
     }
-    
+
     if (!surface) {
         // Place dummy values as the width and height,
         // so it'll appear as an empty line, and not
@@ -92,23 +92,23 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
         return;
     }
     SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
-    
+
     data->texture = texture;
     data->w = surface->w;
     data->h = surface->h;
-    
+
     if (cache_object) {
         *cache_object = *data;
     } else {
         AddTextDataToCache(data);
     }
-    
+
     const SDL_Rect dst = {
         data->x, data->y,
         data->w, data->h
     };
     SDL_RenderCopy(renderer, texture, NULL, &dst);
-    
+
     SDL_FreeSurface(surface);
 }
 
@@ -119,6 +119,14 @@ inline static bool PointIntersectsWithRect(SDL_Point a, SDL_Rect r) {
         a.x <= r.x+r.w && a.y <= r.y+r.h)
         return true;
     return false;
+}
+
+inline static bool RectIntersectsWithRect(SDL_Rect r1, SDL_Rect r2) {
+    bool noOverlap = r1.x > r2.x+r2.w ||
+        r2.x > r1.x+r1.w ||
+        r1.y > r2.y+r2.h ||
+        r2.y > r1.y+r1.h;
+    return !noOverlap;
 }
 
 inline static float lerp(float a, float b, float t) {
@@ -135,7 +143,7 @@ inline static void NewFile(char *out) {
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_EXPLORER;
-    
+
     if (GetOpenFileName(&ofn))
         strcpy(out, fileName);
     else
