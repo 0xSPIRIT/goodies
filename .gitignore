@@ -1,1 +1,7 @@
 .vs/
+*.obj
+*.pdb
+*.sln
+*.suo
+project.4coder
+*.zip

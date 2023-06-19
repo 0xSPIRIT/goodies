@@ -1,2 +1,2 @@
 @echo off
-cl.exe /O2 /GS- /W4 /Gs9999999 /GR- /nologo goodies.cpp /link shell32.lib comdlg32.lib SDL2.lib SDL2_ttf.lib /incremental:no /NOIMPLIB /NOEXP
+cl.exe /DRELEASE /O2 /GS- /W4 /Gs9999999 /GR- /nologo goodies.cpp /link shell32.lib comdlg32.lib user32.lib SDL2.lib SDL2_ttf.lib /incremental:no /NOIMPLIB /NOEXP /SUBSYSTEM:windows

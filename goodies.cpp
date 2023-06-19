@@ -769,3 +769,15 @@ int main() {
 
     return 0;
 }
+
+#ifdef RELEASE
+int WINAPI WinMain(
+        HINSTANCE hInstance,
+        HINSTANCE hPrevInstance,
+        LPSTR     lpCmdLine,
+        int       nShowCmd)
+{
+    (void)hInstance,hPrevInstance,lpCmdLine,nShowCmd;
+    main();
+}
+#endif
