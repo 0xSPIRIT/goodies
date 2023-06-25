@@ -23,6 +23,52 @@
 
 #define PAD 32
 
+
+
+     // Taken from https://github.com/kumar8600/win32_SetProcessDpiAware/blob/master/win32_SetProcessDpiAware.c
+     //
+     // Created by kumar on 2016/03/29.
+     //
+
+     typedef enum PROCESS_DPI_AWARENESS
+     {
+         PROCESS_DPI_UNAWARE = 0,
+         PROCESS_SYSTEM_DPI_AWARE = 1,
+         PROCESS_PER_MONITOR_DPI_AWARE = 2
+     } PROCESS_DPI_AWARENESS;
+
+     typedef BOOL (WINAPI * SETPROCESSDPIAWARE_T)(void);
+     typedef HRESULT (WINAPI * SETPROCESSDPIAWARENESS_T)(PROCESS_DPI_AWARENESS);
+
+     inline bool win32_SetProcessDpiAware(void) {
+         HMODULE shcore = LoadLibraryA("Shcore.dll");
+         SETPROCESSDPIAWARENESS_T SetProcessDpiAwareness = NULL;
+         if (shcore) {
+             SetProcessDpiAwareness = (SETPROCESSDPIAWARENESS_T) GetProcAddress(shcore, "SetProcessDpiAwareness");
+         }
+         HMODULE user32 = LoadLibraryA("User32.dll");
+         SETPROCESSDPIAWARE_T SetProcessDPIAware = NULL;
+         if (user32) {
+             SetProcessDPIAware = (SETPROCESSDPIAWARE_T) GetProcAddress(user32, "SetProcessDPIAware");
+         }
+    
+         bool ret = false;
+         if (SetProcessDpiAwareness) {
+             ret = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) == S_OK;
+         } else if (SetProcessDPIAware) {
+             ret = SetProcessDPIAware() != 0;
+         }
+    
+         if (user32) {
+             FreeLibrary(user32);
+         }
+         if (shcore) {
+             FreeLibrary(shcore);
+         }
+         return ret;
+     }
+
+
 struct Link {
     int id;
     char link[MAX_STRING_SIZE];
@@ -116,10 +162,15 @@ static void OpenLinks(Link *links[], int lc) {
         sprintf(message, "%s %s", message, links[i]->link);
 
     char command[MAX_STRING_SIZE] = {};
-    if (CustomCheckbox(CustomOption::UseChrome)) {
-        sprintf(command, "%s -incognito", message);
+    
+    if (CustomCheckbox(CustomOption::OpenIncognito)) {
+        if (CustomCheckbox(CustomOption::UseChrome)) {
+            sprintf(command, "%s -incognito", message);
+        } else {
+            sprintf(command, "-private-window \"%s\"", message);
+        }
     } else {
-        sprintf(command, "-private-window \"%s\"", message);
+        strcpy(command, message);
     }
     
     const char *browser_string;
@@ -553,7 +604,7 @@ static void FreeEverything() {
 }
 
 int RunGoodies() {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
+    win32_SetProcessDpiAware();
     
     char cwd[MAX_PATH]={};
     GetCurrentDirectory(MAX_PATH, cwd);
@@ -692,6 +743,16 @@ int RunGoodies() {
                                 WriteConfig();
                             }
                         } break;
+                        
+                        case SDLK_UP: {
+                            if (state == State::NORMAL)
+                                view_to_y -= scroll_speed;
+                        } break;
+                        case SDLK_DOWN: {
+                            if (state == State::NORMAL)
+                                view_to_y += scroll_speed;
+                        } break;
+                        
                         case SDLK_ESCAPE: {
                             if (state == State::CUSTOM_MENU) break; // Don't handle this
                             
@@ -706,6 +767,7 @@ int RunGoodies() {
                             editing_link = null;
                             global_menu.active = false;
                         } break;
+                        
                         case SDLK_RETURN: case SDLK_TAB: {
                             if (state == State::EDITING_NAME) {
                                 state = State::EDITING_DESC;
@@ -719,6 +781,7 @@ int RunGoodies() {
                                 editing_field = null;
                             }
                         } break;
+                        
                         case SDLK_BACKSPACE: {
                             if (state != State::NORMAL) {
                                 char *buffer = GetBufferFromState(state);
@@ -730,6 +793,7 @@ int RunGoodies() {
                                 }
                             }
                         } break;
+                        
                         case SDLK_v: {
                             char *buffer = GetBufferFromState(state);
                             if (buffer && (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]))
@@ -750,6 +814,7 @@ int RunGoodies() {
                                 }
                             }
                         } break;
+                        
                         case SDLK_s: {
                             if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL])
                                 SaveToFile();
@@ -842,19 +907,27 @@ int RunGoodies() {
         SDL_SetRenderDrawColor(renderer, bgcol.r, bgcol.g, bgcol.b, 255);
         SDL_RenderClear(renderer);
 
+        int pad = 0;
+        
         TextDrawData data = {};
-        strcpy(data.id, "title");
-        strcpy(data.string, CustomField(CustomOption::TitleText).input);
-        data.x = PAD;
-        data.y = PAD - (int)view_y;
-        data.font = title_font;
-        data.force_redraw = false;
-        data.wrap_width = window_width - PAD*2;
-        data.color = CustomColor(CustomOption::AccentColor);
-
-        TextDraw(renderer, &data);
-
-        DrawLinkAndChildLinks(start_link, PAD, 2*PAD+data.h);
+        if (*CustomField(CustomOption::TitleText).input) {
+            strcpy(data.id, "title");
+            strcpy(data.string, CustomField(CustomOption::TitleText).input);
+            data.x = PAD;
+            data.y = PAD - (int)view_y;
+            data.font = title_font;
+            data.force_redraw = false;
+            data.wrap_width = window_width - PAD*2;
+            data.color = CustomColor(CustomOption::AccentColor);
+            
+            TextDraw(renderer, &data);
+            
+            pad = 2*PAD;
+        } else {
+            pad = PAD;
+        }
+        
+        DrawLinkAndChildLinks(start_link, PAD, pad+data.h);
 
         SetAllLinksNotHighlighted(start_link);
         if (state == State::NORMAL) {

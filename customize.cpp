@@ -3,17 +3,17 @@
 //      - Description first, then link.
 //      x Font & Size
 //      x Color
-//      - Browser
-//      - Load different goodie file
-//      - Delete config file
-//      - Don't use incognito
+//      x Browser
+//      x Load different goodie file
+//      x Delete config file
+//      x Don't use incognito
 
 #define CustomField(X) (custom_menu.options[X].field)
 #define CustomCheckbox(X) (custom_menu.options[X].checkbox.active)
 #define CustomColor(X) string_to_hex_rgb(CustomField(X).input)
 
 enum CustomOption {
-    DescriptionFirst,
+    //DescriptionFirst,
     OpenIncognito,
     UseChrome,
     Font,
@@ -111,8 +111,8 @@ void RunCheckbox(Custom_Checkbox *checkbox) {
     
     if (checkbox->active) {
         SDL_Rect r = {
-            checkbox->rect.x + checkbox->rect.w/4,
-            checkbox->rect.y + checkbox->rect.h/4,
+            1+checkbox->rect.x + checkbox->rect.w/4,
+            1+checkbox->rect.y + checkbox->rect.h/4,
             checkbox->rect.w/2,
             checkbox->rect.h/2
         };
@@ -170,7 +170,7 @@ void RunTextField(Text_Field *field) {
     text_data.font = font;
     text_data.wrapped = true;
     text_data.wrap_width = window_width-PAD*2;
-    text_data.color = {200, 200, 200, 255};
+    text_data.color = CustomColor(CustomOption::TextColor);
     
     {
         SDL_Color bg = CustomColor(CustomOption::BackgroundColor);
@@ -213,8 +213,8 @@ void RunTextField(Text_Field *field) {
 
 void SetupCustomMenu(bool defaults) {
     CustomizeOptionType custom_option_key[] = {
-        {CustomOption::DescriptionFirst, "Description First",  OptionType::Checkbox},
-        {CustomOption::OpenIncognito,    "Open Links Private", OptionType::Checkbox},
+        //{CustomOption::DescriptionFirst, "Description First",  OptionType::Checkbox},
+        {CustomOption::OpenIncognito,    "Open Links Privately", OptionType::Checkbox},
         {CustomOption::UseChrome,        "Use Chrome",         OptionType::Checkbox},
         {CustomOption::Font,             "Font",               OptionType::Textfield},
         {CustomOption::FontSize,         "Font Size",          OptionType::Textfield},
@@ -234,6 +234,8 @@ void SetupCustomMenu(bool defaults) {
     }
     
     if (defaults) {
+        CustomCheckbox(CustomOption::OpenIncognito) = true;
+        
         strcpy(CustomField(CustomOption::Font).input, "C:/Windows/Fonts/bookosi.ttf");
         strcpy(CustomField(CustomOption::FontSize).input, "22");
         
@@ -324,7 +326,7 @@ void DrawCustomMenu() {
         text_data.font = font;
         text_data.wrapped = true;
         text_data.wrap_width = window_width-PAD*2;
-        text_data.color = {200, 200, 200, 255};
+        text_data.color = CustomColor(CustomOption::TextColor);
         
         TextDraw(renderer, &text_data);
         
@@ -396,7 +398,11 @@ static void WriteConfig(void) {
                 fprintf(fp, "%d\n", option->checkbox.active);
             } break;
             case OptionType::Textfield: {
-                fprintf(fp, "%s\n", option->field.input);
+                if (*option->field.input == 0) {
+                    fprintf(fp, "EMPTY-STRING\n");
+                } else {
+                    fprintf(fp, "%s\n", option->field.input);
+                }
             } break;
         }
     }
@@ -409,6 +415,25 @@ static void LoadConfig(void) {
     
     FILE *fp = fopen(config_path, "r");
     
+    assert(fp);
+    
+    unsigned long pos = ftell(fp);
+    char c;
+    fscanf(fp, "%c", &c);
+    
+    fseek(fp, pos, SEEK_SET);
+    
+    if (c < '0' || c > '9') {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                                 "Error!",
+                                 "It seems like you're using a config file from an older version of goodies.\nI'll exit, and delete your old config file.\nWhen you reopen, you can reset the path to your goodies file as it was before!",
+                                 window);
+        if (window) FreeEverything();
+        fclose(fp);
+        DeleteFileA(config_path);
+        exit(0);
+    }
+    
     for (int i = 0; i < CustomOption::Count; i++) {
         Custom_Option *option = &custom_menu.options[i];
         
@@ -417,7 +442,12 @@ static void LoadConfig(void) {
                 fscanf(fp, "%d\n", &option->checkbox.active);
             } break;
             case OptionType::Textfield: {
-                fscanf(fp, "%[^\n]\n", option->field.stable_input);
+                char str[MAX_STRING_SIZE] = {};
+                fscanf(fp, "%[^\n]\n", str);
+                
+                if (strcmp(str, "EMPTY-STRING") == 0) break;
+                
+                strcpy(option->field.stable_input, str);
                 strcpy(option->field.input, option->field.stable_input);
                 if (option->type.option == CustomOption::GoodieFile) {
                     strcpy(filepath, option->field.stable_input);
