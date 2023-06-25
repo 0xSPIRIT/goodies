@@ -56,13 +56,10 @@ struct ButtonResult {
 static ButtonResult TickButton(Button *button, int x, int y) {
     ButtonResult result = {};
 
-    SDL_Point mouse = {mx, my};
+    SDL_Point ms = {mx, my};
     SDL_Rect rect = {x, y - (int)view_y, button->w, button->h};
 
-    if (button->texture)
-        SDL_SetTextureColorMod(button->texture, 255, 255, 255);
-
-    if (PointIntersectsWithRect(mouse, rect)) {
+    if (PointIntersectsWithRect(ms, rect)) {
         result.highlighted = true;
         if (button->texture)
             SDL_SetTextureColorMod(button->texture, 127, 127, 127);
@@ -220,6 +217,15 @@ static void menu_delete_link(MenuOperation operation) {
     state = State::NORMAL;
 }
 
+static void menu_toggle_collapse_link(MenuOperation operation) {
+    Link *link = operation.hover.link;
+    
+    link->collapsed = !link->collapsed;
+    
+    global_menu.active = false;
+    state = State::NORMAL;
+}
+
 static void SetMenuOptions(Menu *menu, MenuOption options[], int option_count) {
     menu->option_count = option_count;
 
@@ -262,9 +268,10 @@ static void OpenMenu(Menu *menu, MenuOperation op) {
                     {"Add Child Link", menu_add_child_link},
                     {"Insert Link After", menu_insert_link_after},
                     {"Insert Link Before", menu_insert_link_before},
-                    {"Delete Link", menu_delete_link}
+                    {"Delete Link", menu_delete_link},
+                    {"Toggle Collapse", menu_toggle_collapse_link}
                 };
-                SetMenuOptions(menu, options, 6);
+                SetMenuOptions(menu, options, 7);
             }
         } break;
         case MenuOp::OutsideLink: {

@@ -18,6 +18,7 @@ struct TextDrawData {
 
 static TextDrawData text_cache[MAX_TEXT_COUNT] = {};
 static int text_cache_count = 0;
+bool global_should_update_text = false;
 
 static TextDrawData *FindTextDataInCache(char id[32]) {
     for (int i = 0; i < text_cache_count; i++) {
@@ -41,7 +42,7 @@ static bool HasTextDataChanged(TextDrawData *a, TextDrawData *b) {
 }
 
 static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
-    bool should_redraw = data->force_redraw;
+    bool should_redraw = data->force_redraw || global_should_update_text;
     TextDrawData *cache_object = FindTextDataInCache(data->id);
 
     if (!cache_object) {
@@ -140,6 +141,7 @@ inline static void NewFile(char *out) {
     ZeroMemory(&ofn, sizeof(ofn));
     ofn.lStructSize = sizeof(OPENFILENAME);
     ofn.hwndOwner = null;
+    ofn.lpstrTitle = "Create or open a file to store links";
     ofn.lpstrFilter = "*.txt";
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;

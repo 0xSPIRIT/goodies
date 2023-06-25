@@ -1,20 +1,21 @@
 // TODO:
-//  - Customization options (popup menu)
-//      - Description first, then link.
-//      - Font & Size
-//      - Color
-//      - Browser
-//      - Load different goodie file
-//      - Delete config file
+//  - When something is collapsed, select all child links as well
+//  - Bulk actions with selections.
+//    - Moving links under another link via click and drag
+//  - Profile it to ensure when adding links, all the ID's are
+//    proper and nothing has the IDs, making it re-draw text
+//    every frame.
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
 
+#include <windows.h>
 #include <shlobj_core.h>
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_image.h>
 
 #define null NULL
 
@@ -28,6 +29,7 @@ struct Link {
     char description[MAX_STRING_SIZE];
     bool highlighted, selected;
     bool editing; // Are we currently editing?
+    bool collapsed; // If true, it doesn't render child nodes.
     SDL_Rect link_visible_rect,
     desc_visible_rect; // Gets set upon drawing.
     Link *next; // Next link at the same level
@@ -40,21 +42,14 @@ enum State {
     NORMAL, // Normal shit
     EDITING_NAME,
     EDITING_DESC,
-    RIGHT_CLICK
+    RIGHT_CLICK,
+    CUSTOM_MENU
 };
-
-enum Browser {
-    CHROME,
-    FIREFOX
-};
-
-#define BrowserString(X) (X == CHROME ? "chrome" : "firefox")
-Browser browser = FIREFOX;
 
 static int state = State::NORMAL;
 static bool first_edit = false;
 
-static char config_path[MAX_PATH]={};
+static char config_path[MAX_PATH];
 
 static Link *start_link = null;
 static Link *curr_link = null; // The top-level thing.
@@ -75,23 +70,31 @@ static float scroll_speed = 60;
 static float scroll_t = 0.25f; // The t value used in the scroll lerp
 
 static bool typed_this_frame = false;
+static char text_input_this_frame = 0;
 
 static SDL_Window *window = null;
 static SDL_Renderer *renderer = null;
-static SDL_Texture *plus = null;
-static int plus_w, plus_h;
+static SDL_Texture *plus = null, *arrow = null;
+static int plus_w, plus_h, arrow_w, arrow_h;
 
 static int mx, my;
 
-static int window_width = 960, window_height = 960;
+static int window_width = 960;
+static int window_height = 960;
 static bool mouse_clicked = false;
+static Uint32 mouse = 0;
 static const Uint8 *keys = null;
 
 static TTF_Font *font = null;
+static TTF_Font *title_font = null;
 
 static void FreeLinks(Link *start);
+static void SaveToFile();
+static int DrawCursor(TTF_Font *fnt, int x, int y);
+static void FreeEverything();
 
 #include "interface.cpp"
+#include "customize.cpp"
 
 static void FreeLinks(Link *start) {
     if (!start) return;
@@ -113,12 +116,21 @@ static void OpenLinks(Link *links[], int lc) {
         sprintf(message, "%s %s", message, links[i]->link);
 
     char command[MAX_STRING_SIZE] = {};
-    if (browser == CHROME)
+    if (CustomCheckbox(CustomOption::UseChrome)) {
         sprintf(command, "%s -incognito", message);
-    else if (browser == FIREFOX)
+    } else {
         sprintf(command, "-private-window \"%s\"", message);
-
-    ShellExecuteA(0, 0, BrowserString(browser), command, 0, SW_SHOWMAXIMIZED);
+    }
+    
+    const char *browser_string;
+    
+    if (CustomCheckbox(CustomOption::UseChrome)) {
+        browser_string = "chrome";
+    } else {
+        browser_string = "firefox";
+    }
+    
+    ShellExecuteA(0, 0, browser_string, command, 0, SW_SHOWMAXIMIZED);
 }
 
 static Link *AddChildLink(Link *parent, const char *link, const char *description) {
@@ -161,8 +173,8 @@ static Link *AddChildLink(Link *parent, const char *link, const char *descriptio
 
 // Returns the width of the cursor drawn
 static int DrawCursor(TTF_Font *fnt, int x, int y) {
-    static int width = -1;
-    static int height = -1;
+    int width = -1;
+    int height = -1;
 
     if (height == -1 || width == -1) {
         TTF_SizeText(fnt, "|", &width, &height);
@@ -192,6 +204,46 @@ static bool LinkOutOfView(int x, int y) {
     return false;
 }
 
+static void DrawLinkArrow(Link *link, int x, int y, int height) {
+    if (!link->child) return;
+    
+    SDL_Rect dst = {
+        x-(arrow_w*3)/2,
+        y + height/2 - arrow_h/2 - (int)view_y,
+        arrow_w,
+        arrow_h
+    };
+    
+    Button b = {};
+    b.w = dst.w;
+    b.h = dst.h;
+    
+    ButtonResult result = TickButton(&b, dst.x, dst.y + (int)view_y);
+    
+    if (result.highlighted) {
+        SDL_SetTextureColorMod(arrow, 127, 127, 127);
+    } else {
+        SDL_Color col = CustomColor(CustomOption::AccentColor);
+        SDL_SetTextureColorMod(arrow, col.r, col.g, col.b);
+    }
+    
+    if (result.clicked) {
+        link->collapsed = !link->collapsed;
+    }
+    
+    if (!link->collapsed) {
+        SDL_RenderCopyEx(renderer,
+                         arrow,
+                         NULL,
+                         &dst,
+                         90,
+                         NULL,
+                         SDL_FLIP_NONE);
+    } else {
+        SDL_RenderCopy(renderer, arrow, NULL, &dst);
+    }
+}
+
 static int DrawLink(Link *link, int x, int y) {
     int link_w = 0;
     int height = 0;
@@ -204,7 +256,7 @@ static int DrawLink(Link *link, int x, int y) {
     if (link->editing && LinkOutOfView(x, y)) {
         view_to_y = (float)(y-window_height/2);
     }
-
+    
     if (*link->link || link->editing) { // Link
         TextDrawData data = {};
         sprintf(data.id, "link %d", link->id);
@@ -215,7 +267,7 @@ static int DrawLink(Link *link, int x, int y) {
         data.font = font;
         data.force_redraw = false;
         data.wrap_width = window_width-PAD*2;
-        data.color = SDL_Color{255, 255, 255, 255};
+        data.color = CustomColor(CustomOption::TextColor);
 
         TextDraw(renderer, &data);
 
@@ -257,7 +309,7 @@ static int DrawLink(Link *link, int x, int y) {
         data.font = font;
         data.force_redraw = false;
         data.wrap_width = window_width - PAD - link_w;
-        data.color = SDL_Color{160, 60, 60, 255};
+        data.color = CustomColor(CustomOption::AccentColor);
 
         TextDraw(renderer, &data);
 
@@ -283,12 +335,18 @@ static int DrawLink(Link *link, int x, int y) {
             height = height + data.h;
         }
     }
+    
+    DrawLinkArrow(link, x, y, height);
 
     if (link->next == null) {
         Button b = {};
         b.texture = plus;
         b.w = plus_w;
         b.h = plus_h;
+        
+        SDL_Color col = CustomColor(CustomOption::AccentColor);
+        SDL_SetTextureColorMod(b.texture, col.r, col.g, col.b);
+ 
         if (TickButton(&b, end_x, y-plus_h/2+height/2).clicked) {
             MenuOperation operation = {};
             operation.op = OnLink;
@@ -353,6 +411,11 @@ static int DrawLinkAndChildLinks(Link *link, int x, int y) {
          a = a->next)
     {
         cumh += DrawLink(a, x, y+cumh);
+        if (a->collapsed) {
+            cumh += 8;
+            continue;
+        }
+        
         cumh += 8+DrawLinkAndChildLinks(a->child, 32+x, y+cumh+8);
     }
 
@@ -367,6 +430,8 @@ static inline char *GetBufferFromState(int s) {
     } else if (s == State::EDITING_DESC) {
         assert(editing_link);
         buffer = editing_link->description;
+    } else if (editing_field && s == State::CUSTOM_MENU) {
+        buffer = editing_field->input;
     }
     return buffer;
 }
@@ -460,35 +525,74 @@ static void LoadFile(const char *file) {
     fclose(fp);
 }
 
-int main() {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
+BOOL FileExists(LPCTSTR szPath) {
+  DWORD dwAttrib = GetFileAttributes(szPath);
 
+  return (dwAttrib != INVALID_FILE_ATTRIBUTES && 
+         !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+static void FreeEverything() {
+    for (int i = 0; i < text_cache_count; i++) {
+        if (text_cache[i].texture)
+            SDL_DestroyTexture(text_cache[i].texture);
+    }
+    
+    SDL_DestroyTexture(plus);
+    SDL_DestroyTexture(arrow);
+
+    FreeMenu(&global_menu);
+    FreeLinks(start_link);
+
+    SDL_DestroyWindow(window);
+    SDL_DestroyRenderer(renderer);
+
+    TTF_Quit();
+    IMG_Quit();
+    SDL_Quit();
+}
+
+int RunGoodies() {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
+    
     char cwd[MAX_PATH]={};
     GetCurrentDirectory(MAX_PATH, cwd);
 
     SHGetFolderPathA(null, CSIDL_APPDATA, null, 0, config_path);
+    
     sprintf(config_path, "%s\\goodies.cfg", config_path);
-    FILE *fa = fopen(config_path, "r");
-
-    if (!fa) {
+    
+    bool exists = FileExists(config_path);
+    
+    if (exists) {
+        SetupCustomMenu(false);
+        LoadConfig();
+    } else {
         NewFile((char*)filepath);
-        fa = fopen(config_path, "w");
-
-        fprintf(fa, "%s\n", filepath);
-        // TODO: Figure out if they use firefox or chrome
+        
+        SetupCustomMenu(true);
+        
         int result = MessageBox(null, "Do you use chrome?\nOnly chrome and firefox are supported.", "Chrome?", MB_YESNO);
         if (result == IDYES) {
-            browser = CHROME;
+            CustomCheckbox(CustomOption::UseChrome) = 1;
         } else if (result == IDNO) {
-            browser = FIREFOX;
+            CustomCheckbox(CustomOption::UseChrome) = 0;
         } else {
-            fclose(fa);
             DeleteFileA(config_path);
             exit(1);
         }
-        fprintf(fa, "%d", browser == CHROME);
+        
+        WriteConfig();
+    }
+    
+#if 0
+    FILE *fa = fopen(config_path, "r");
+    
+    // TODO: Replace this with WriteConfig and LoadConfig
+
+    if (!fa) {
     } else {
-        fscanf(fa, "%s\n", filepath);
+        fscanf(fa, "%[^\n]\n", filepath);
         int use_chrome = false;
         fscanf(fa, "%d", &use_chrome);
         if (use_chrome) {
@@ -498,11 +602,13 @@ int main() {
         }
     }
     fclose(fa);
-
+#endif
+    
     SetCurrentDirectory(cwd); // Windows is horrible and resets our CWD
 
     SDL_Init(SDL_INIT_VIDEO);
     TTF_Init();
+    IMG_Init(IMG_INIT_PNG);
 
     window = SDL_CreateWindow("Goodies Viewer",
                               SDL_WINDOWPOS_UNDEFINED,
@@ -516,21 +622,29 @@ int main() {
                                   -1,
                                   SDL_RENDERER_PRESENTVSYNC);
     assert(renderer);
-
+    
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    
     global_menu = MakeMenu();
-
-    SDL_Surface *surf = SDL_LoadBMP("plus.bmp");
+    
+    SDL_Surface *surf = IMG_Load("plus.png");
     plus = SDL_CreateTextureFromSurface(renderer, surf);
     plus_w = surf->w;
     plus_h = surf->h;
     SDL_FreeSurface(surf);
+    
+    surf = IMG_Load("arrow.png");
+    arrow = SDL_CreateTextureFromSurface(renderer, surf);
+    arrow_w = surf->w;
+    arrow_h = surf->h;
+    SDL_FreeSurface(surf);
 
     LoadFile(filepath);
 
-    font = TTF_OpenFont("C:/Windows/Fonts/bookosi.ttf", 22);
+    font = TTF_OpenFont(CustomField(CustomOption::Font).input, atoi(CustomField(CustomOption::FontSize).input));
     assert(font);
 
-    TTF_Font *title_font = TTF_OpenFont("C:/Windows/Fonts/bookosi.ttf", 40);
+    title_font = TTF_OpenFont(CustomField(CustomOption::Font).input, atoi(CustomField(CustomOption::FontSize).input)+18);
     assert(title_font);
 
     bool running = true;
@@ -540,6 +654,7 @@ int main() {
     while (running) {
         mouse_clicked = false;
         typed_this_frame = false;
+        global_should_update_text = false;
 
         if (has_event_queued)
             goto eventloop;
@@ -550,6 +665,7 @@ int main() {
                 case SDL_QUIT: { running = false; } break;
                 case SDL_TEXTINPUT: {
                     typed_this_frame = true;
+                    text_input_this_frame = *event.text.text;
                     if (state == State::EDITING_NAME) {
                         assert(editing_link);
                         if (first_edit) {
@@ -560,12 +676,25 @@ int main() {
                     } else if (state == State::EDITING_DESC) {
                         assert(editing_link);
                         strcat(editing_link->description, event.text.text);
+                    } else if (state == State::CUSTOM_MENU && editing_field) {
+                        strcat(editing_field->input, event.text.text);
                     }
                 } break;
                 case SDL_KEYDOWN: {
                     typed_this_frame = true;
                     switch (event.key.keysym.sym) {
+                        case SDLK_F8: {
+                            custom_menu.active = !custom_menu.active;
+                            if (custom_menu.active) {
+                                state = State::CUSTOM_MENU;
+                            } else {
+                                state = State::NORMAL;
+                                WriteConfig();
+                            }
+                        } break;
                         case SDLK_ESCAPE: {
+                            if (state == State::CUSTOM_MENU) break; // Don't handle this
+                            
                             state = State::NORMAL;
                             if (editing_link && !*editing_link->link && !*editing_link->description) {
                                 MenuOperation dummy_operation = {
@@ -584,12 +713,16 @@ int main() {
                                 state = State::NORMAL;
                                 editing_link->editing = false;
                                 editing_link = null;
+                            } else if (editing_field && state == State::CUSTOM_MENU) {
+                                UpdateTextField(editing_field);
+                                editing_field->focus = false;
+                                editing_field = null;
                             }
                         } break;
                         case SDLK_BACKSPACE: {
                             if (state != State::NORMAL) {
                                 char *buffer = GetBufferFromState(state);
-                                if (*buffer) {
+                                if (buffer && *buffer) {
                                     if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]) {
                                         memset(buffer, 0, strlen(buffer));
                                     }
@@ -599,8 +732,7 @@ int main() {
                         } break;
                         case SDLK_v: {
                             char *buffer = GetBufferFromState(state);
-                            if ((state == State::EDITING_NAME || state == State::EDITING_DESC) &&
-                                (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]))
+                            if (buffer && (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]))
                             {
                                 char *clipboard = SDL_GetClipboardText();
                                 if (clipboard) {
@@ -685,7 +817,7 @@ int main() {
             }
         }
 
-        Uint32 mouse = SDL_GetMouseState(&mx, &my);
+        mouse = SDL_GetMouseState(&mx, &my);
         keys = SDL_GetKeyboardState(0);
 
         view_y = lerp(view_y, view_to_y, scroll_t);
@@ -706,18 +838,19 @@ int main() {
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_Color bgcol = CustomColor(CustomOption::BackgroundColor);
+        SDL_SetRenderDrawColor(renderer, bgcol.r, bgcol.g, bgcol.b, 255);
         SDL_RenderClear(renderer);
 
         TextDrawData data = {};
         strcpy(data.id, "title");
-        strcpy(data.string, "Goodies");
+        strcpy(data.string, CustomField(CustomOption::TitleText).input);
         data.x = PAD;
         data.y = PAD - (int)view_y;
         data.font = title_font;
         data.force_redraw = false;
         data.wrap_width = window_width - PAD*2;
-        data.color = SDL_Color{200, 40, 20, 255};
+        data.color = CustomColor(CustomOption::AccentColor);
 
         TextDraw(renderer, &data);
 
@@ -738,6 +871,28 @@ int main() {
             SDL_SetRenderDrawColor(renderer, 70, 120, 250, 255);
             SDL_RenderDrawRect(renderer, &selection.box);
         }
+        
+        
+        {
+            TextDrawData text_data = {};
+            strcpy(text_data.id, "f8");
+            strcpy(text_data.string, "Customize - F8");
+            text_data.font = font;
+            
+            int w, h;
+            TTF_SizeText(text_data.font, text_data.string, &w, &h);
+            
+            text_data.x = window_width-w-PAD;
+            text_data.y = window_height-h-PAD;
+            text_data.color = CustomColor(CustomOption::TextColor);
+            text_data.color.r /= 2;
+            text_data.color.g /= 2;
+            text_data.color.b /= 2;
+            
+            TextDraw(renderer, &text_data);
+        }
+        
+        DrawCustomMenu();
 
         DrawMenu(&global_menu);
 
@@ -751,21 +906,7 @@ int main() {
     }
 
     SaveToFile();
-
-    for (int i = 0; i < text_cache_count; i++) {
-        if (text_cache[i].texture)
-            SDL_DestroyTexture(text_cache[i].texture);
-    }
-    SDL_DestroyTexture(plus);
-
-    FreeMenu(&global_menu);
-    FreeLinks(start_link);
-
-    SDL_DestroyWindow(window);
-    SDL_DestroyRenderer(renderer);
-
-    SDL_Quit();
-    TTF_Quit();
+    WriteConfig();
 
     return 0;
 }
@@ -778,6 +919,10 @@ int WINAPI WinMain(
         int       nShowCmd)
 {
     (void)hInstance,hPrevInstance,lpCmdLine,nShowCmd;
-    main();
+    return RunGoodies();
+}
+#else
+int main() {
+    return RunGoodies();
 }
 #endif
