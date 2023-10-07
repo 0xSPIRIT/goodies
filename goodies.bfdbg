@@ -1,0 +1,212 @@
+FileVersion = 1
+LastConfig = "Debug"
+LastPlatform = "Win64"
+RecentFilesList = ["d:\\dev\\viewer\\util.cpp", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\video\\windows\\SDL_windowsmessagebox.c", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\render\\direct3d\\SDL_render_d3d.c", "d:\\dev\\viewer\\interface.cpp", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\stdlib\\SDL_string.c", "d:\\dev\\viewer\\goodies.cpp"]
+
+[MainWindow]
+X = 0
+Y = 42
+Width = 1801
+Height = 894
+ShowKind = "ShowNormal"
+
+[MainDockingFrame]
+Type = "DockingFrame"
+SplitType = 2
+
+[[MainDockingFrame.DockedWidgets]]
+RequestedWidth = 1211.0
+RequestedHeight = 540.0
+SizePriority = 540.0
+Type = "DockingFrame"
+SplitType = 1
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets]]
+IsFillWidget = true
+Permanent = true
+RequestedWidth = 150.0
+RequestedHeight = 150.0
+SizePriority = 150.0
+DefaultDocumentsTabbedView = true
+Type = "TabbedView"
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+Active = true
+TabLabel = "util.cpp"
+TabWidth = 81.63265
+TabIsPinned = false
+Type = "SourceViewPanel"
+FilePath = "d:\\dev\\viewer\\util.cpp"
+CursorPos = 4762
+VertPos = 3648.0
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "SDL_windowsmessagebox.c"
+TabWidth = 196.5986
+TabIsPinned = false
+Type = "SourceViewPanel"
+FilePath = "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\video\\windows\\SDL_windowsmessagebox.c"
+CursorPos = 28911
+VertPos = 20712.0
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "SDL_render_d3d.c"
+TabWidth = 131.3605
+TabIsPinned = false
+Type = "SourceViewPanel"
+FilePath = "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\render\\direct3d\\SDL_render_d3d.c"
+CursorPos = 47935
+VertPos = 29022.0
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "interface.cpp"
+TabWidth = 104.1497
+TabIsPinned = false
+Type = "SourceViewPanel"
+FilePath = "d:\\dev\\viewer\\interface.cpp"
+CursorPos = 1103
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "SDL_string.c"
+TabWidth = 98.70749
+TabIsPinned = false
+Type = "SourceViewPanel"
+FilePath = "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\stdlib\\SDL_string.c"
+CursorPos = 9082
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "goodies.cpp"
+TabWidth = 99.38776
+TabIsPinned = false
+Type = "SourceViewPanel"
+FilePath = "d:\\dev\\viewer\\goodies.cpp"
+CursorPos = 16550
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets]]
+RequestedWidth = 703.0
+RequestedHeight = 300.0
+Type = "DockingFrame"
+SplitType = 2
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets]]
+RequestedWidth = 911.0
+RequestedHeight = 300.0
+SizePriority = 0.659
+Type = "TabbedView"
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "Memory"
+TabWidth = 98.29932
+TabIsPinned = false
+Type = "MemoryPanel"
+AutoResize = "Auto_Mul8"
+RequestedWidth = 300.0
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+Active = true
+TabLabel = "Watch"
+TabWidth = 86.05442
+TabIsPinned = false
+Type = "WatchPanel"
+Columns = [{Width = 240.0}, {Width = 393.0}, {Width = 240.0}]
+Items = ["config_path", ""]
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "Auto"
+TabWidth = 77.21088
+TabIsPinned = false
+Type = "AutoWatchPanel"
+Columns = [{Width = 240.0}, {Width = 240.0}, {Width = 240.0}]
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets]]
+RequestedWidth = 1825.0
+RequestedHeight = 300.0
+SizePriority = 0.341
+Type = "TabbedView"
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "Threads"
+TabWidth = 95.57823
+TabIsPinned = false
+Type = "ThreadPanel"
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+Active = true
+TabLabel = "Call Stack"
+TabWidth = 105.102
+TabIsPinned = false
+Type = "CallStackPanel"
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "Immediate"
+TabWidth = 110.5442
+TabIsPinned = false
+Type = "ImmediatePanel"
+
+[[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
+TabLabel = "Breakpoints"
+TabWidth = 117.3469
+TabIsPinned = false
+Type = "BreakpointPanel"
+
+[[BookmarkFolders]]
+Title = ""
+
+[OutputFilters]
+ModuleLoadMessages = false
+ModuleUnloadMessages = false
+ProcessExitMessages = false
+ThreadCreateMessages = false
+ThreadExitMessages = false
+SymbolLoadMessages = false
+ProgramOutput = false
+
+[DebugSession]
+FileVersion = 1
+Dependencies = {}
+
+[DebugSession.Project]
+Name = "Debug Session"
+TargetType = "CustomBuild"
+StartupObject = "Program"
+DefaultNamespace = ""
+
+[DebugSession.Configs.Debug.Win32]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Debug.Win64]
+TargetName = "d:\\dev\\viewer\\goodies.exe"
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Release.Win32]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Release.Win64]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Paranoid.Win32]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Paranoid.Win64]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Test.Win32]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""
+
+[DebugSession.Configs.Test.Win64]
+TargetName = ""
+BuildCommandsOnRun = "Never"
+DebugWorkingDirectory = ""

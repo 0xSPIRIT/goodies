@@ -11,13 +11,14 @@
 
 #include <windows.h>
 #include <shlobj_core.h>
+#include <stdio.h>
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_image.h>
 
-#define null NULL
+#define null 0
 
 #include "util.cpp"
 
@@ -123,7 +124,7 @@ static SDL_Renderer *renderer = null;
 static SDL_Texture *plus = null, *arrow = null;
 static int plus_w, plus_h, arrow_w, arrow_h;
 
-static int mx, my;
+static int mx, my, pmx, pmy;
 
 static int window_width = 960;
 static int window_height = 960;
@@ -182,6 +183,25 @@ static void OpenLinks(Link *links[], int lc) {
     }
     
     ShellExecuteA(0, 0, browser_string, command, 0, SW_SHOWMAXIMIZED);
+}
+
+static void OpenSelectedLinksNoChildren(Link *start) {
+    Link **links = (Link**)calloc(link_count, sizeof(Link*));
+    int i = 0;
+        
+    for (Link *a = start;
+         a;
+         a = a->next)
+    {
+        if (a->selected) {
+            links[i++] = a;
+        }
+    }
+    
+    if (i)
+        OpenLinks(links, i);
+    
+    free(links);
 }
 
 static Link *AddChildLink(Link *parent, const char *link, const char *description) {
@@ -406,7 +426,11 @@ static int DrawLink(Link *link, int x, int y) {
         }
     }
 
-    if (hover.link == link && link->highlighted) {
+    if (link->selected) {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+        SDL_RenderDrawRect(renderer, &link->link_visible_rect);
+        SDL_RenderDrawRect(renderer, &link->desc_visible_rect);
+    } else if (hover.link == link && link->highlighted) {
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         if (hover.what_editing == State::EDITING_NAME)
             SDL_RenderDrawRect(renderer, &link->link_visible_rect);
@@ -501,42 +525,152 @@ static void WriteLinksToFile(FILE *fp, Link *start, int layer) {
     }
 }
 
+static void DrawSelection(void) {
+    //selection.box.y += (int)view_y;
+    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 120);
+    SDL_RenderDrawRect(renderer, &selection.box);
+    //selection.box.y -= (int)view_y;
+}
+
+static Link *FindHoveredLinkAt(Link *start, int x, int y) {
+    if (!start) return null;
+
+    for (Link *a = start;
+         a;
+         a = a->next)
+    {
+        if (PointIntersectsWithRect({x, y}, a->link_visible_rect)) {
+            return a;
+        }
+        Link *result = FindHoveredLinkAt(a->child, x, y);
+        if (result) return result;
+    }
+
+    return null;
+}
+
+#if 0
+static Link *FindLinkBelowMouse(void) {
+    Link *l = null;
+    
+    int x = mx, y = my+(int)view_y;
+    
+    int h;
+    
+    TTF_SizeText(font, "A", null, &h);
+    
+    h *= 2;
+    
+    while (l == null && abs(y - (my+(int)view_y)) < h) {
+        l = FindHoveredLinkAt(start_link, x, y++);
+    }
+    
+    return l;
+}
+#endif
+
+// Find the hovered link, or the previous link at the mouse's position.
+struct LinkResult {
+    Link *hovered_link;
+    Link *prev_link;
+};
+#if 0
+static LinkResult FindHoveredLinkOrPreviousLink(void) {
+    LinkResult result = {};
+    
+    result.hovered_link = FindHoveredLink(start_link).link;
+    if (!result.hovered_link) {
+        Link *l = FindLinkBelowMouse(); 
+        if (l)
+            result.prev_link = l->prev;
+    }
+    
+    return result;
+}
+#endif
+
+#if 0
+static void AttemptDropSelection(void) {
+    if (!selection.holding_link) return;
+    
+    LinkResult result = FindHoveredLinkOrPreviousLink();
+    
+    if (result.hovered_link) {
+        // Add as a child link to result.hovered_link.
+        Link *l = null;
+        for (l = result.hovered_link->child;
+             l && l->next;
+             l = l->next);
+        if (l) {
+            l->next = selection.holding_link;
+            selection.holding_link->prev = l;
+        } else {
+            result.hovered_link->child = selection.holding_link;
+        }
+        selection.holding_link->parent = result.hovered_link;
+    } else {
+        // Add in-between to the previous link
+        if (result.prev_link) {
+            //result.prev_link->next->prev = selection.holding_link;
+            //result.prev_link->next = selection.holding_link;
+            selection.holding_link->next = result.prev_link->next;
+            selection.holding_link->prev = result.prev_link;
+            selection.holding_link->parent = result.prev_link->parent; // Since they're at the same level.
+            result.prev_link->next = selection.holding_link;
+        }
+    }
+}
+#endif
+
 static void SaveToFile() {
     FILE *fp = fopen(filepath, "w");
     WriteLinksToFile(fp, start_link, 0);
     fclose(fp);
 }
 
+static void LoadFileRaw(FILE *fp) {
+    while (!feof(fp)) {
+        char link[MAX_STRING_SIZE] = {};
+        fscanf(fp, "%[^\n]", link);
+        
+        if (feof(fp)) break;
+        
+        char c; // unsused, we just want to eat the \n
+        fscanf(fp, "%c", &c);
+        
+        AddChildLink(null, link, "");
+    }
+}
+
 static void LoadFile(const char *file) {
     FILE *fp = fopen(file, "r");
     if (!fp) {
-        char message[MAX_STRING_SIZE] = {};
-        sprintf(message, "Couldn't load file %s\nExiting...", file);
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error!", message, window);
-        DeleteFile(config_path);
-        exit(1);
+        CommonFileErrorAndExit(file, config_path);
     }
 
     #define MAX_CHILD_LINKS 128
     Link *prevlinks[MAX_CHILD_LINKS] = {};
 
+    unsigned long pos = ftell(fp);
+    char c;
+    fscanf(fp, "%c", &c);
+    
+    fseek(fp, pos, SEEK_SET);
+    
+    // Compatibility with raw files with links not in our format    
+    
+    if (c < '0' || c > '9') {
+        LoadFileRaw(fp);
+        fclose(fp);
+        return;
+    }
+    
     while (!feof(fp)) {
         int layer;
 
         char link_and_desc[MAX_STRING_SIZE]={};
 
-        unsigned long pos = ftell(fp);
-        char c;
-        fscanf(fp, "%c", &c);
-
-        fseek(fp, pos, SEEK_SET);
-
-        if (c >= '0' && c <= '9') {
-            fscanf(fp, "%d:%[^\n]\n", &layer, link_and_desc);
-        } else { // Compatibility with raw files with links not in our format
-            fscanf(fp, "%[^\n]\n", link_and_desc);
-            layer=0;
-        }
+        fscanf(fp, "%d:%[^\n]\n", &layer, link_and_desc);
 
         size_t last = strlen(link_and_desc)-1;
         if (link_and_desc[last] == '\n')
@@ -576,13 +710,6 @@ static void LoadFile(const char *file) {
     fclose(fp);
 }
 
-BOOL FileExists(LPCTSTR szPath) {
-  DWORD dwAttrib = GetFileAttributes(szPath);
-
-  return (dwAttrib != INVALID_FILE_ATTRIBUTES && 
-         !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
-}
-
 static void FreeEverything() {
     for (int i = 0; i < text_cache_count; i++) {
         if (text_cache[i].texture)
@@ -603,6 +730,24 @@ static void FreeEverything() {
     SDL_Quit();
 }
 
+void FirstTimeSetup() {
+    NewFile((char*)filepath);
+    
+    SetupCustomMenu(true);
+    
+    int result = MessageBox(null, "Do you use chrome?\nOnly chrome and firefox are supported.", "Chrome?", MB_YESNO);
+    if (result == IDYES) {
+        CustomCheckbox(CustomOption::UseChrome) = 1;
+    } else if (result == IDNO) {
+        CustomCheckbox(CustomOption::UseChrome) = 0;
+    } else {
+        DeleteFileA(config_path);
+        exit(1);
+    }
+    
+    WriteConfig();
+}
+
 int RunGoodies() {
     win32_SetProcessDpiAware();
     
@@ -619,41 +764,8 @@ int RunGoodies() {
         SetupCustomMenu(false);
         LoadConfig();
     } else {
-        NewFile((char*)filepath);
-        
-        SetupCustomMenu(true);
-        
-        int result = MessageBox(null, "Do you use chrome?\nOnly chrome and firefox are supported.", "Chrome?", MB_YESNO);
-        if (result == IDYES) {
-            CustomCheckbox(CustomOption::UseChrome) = 1;
-        } else if (result == IDNO) {
-            CustomCheckbox(CustomOption::UseChrome) = 0;
-        } else {
-            DeleteFileA(config_path);
-            exit(1);
-        }
-        
-        WriteConfig();
+        FirstTimeSetup();
     }
-    
-#if 0
-    FILE *fa = fopen(config_path, "r");
-    
-    // TODO: Replace this with WriteConfig and LoadConfig
-
-    if (!fa) {
-    } else {
-        fscanf(fa, "%[^\n]\n", filepath);
-        int use_chrome = false;
-        fscanf(fa, "%d", &use_chrome);
-        if (use_chrome) {
-            browser = CHROME;
-        } else {
-            browser = FIREFOX;
-        }
-    }
-    fclose(fa);
-#endif
     
     SetCurrentDirectory(cwd); // Windows is horrible and resets our CWD
 
@@ -706,10 +818,10 @@ int RunGoodies() {
         mouse_clicked = false;
         typed_this_frame = false;
         global_should_update_text = false;
-
+        
         if (has_event_queued)
             goto eventloop;
-
+        
         while (SDL_PollEvent(&event)) {
             eventloop:
             switch (event.type) {
@@ -734,6 +846,12 @@ int RunGoodies() {
                 case SDL_KEYDOWN: {
                     typed_this_frame = true;
                     switch (event.key.keysym.sym) {
+                        case SDLK_PAGEDOWN: {
+                            view_to_y += window_height;
+                        } break;
+                        case SDLK_PAGEUP: {
+                            view_to_y -= window_height;
+                        } break;
                         case SDLK_F8: {
                             custom_menu.active = !custom_menu.active;
                             if (custom_menu.active) {
@@ -754,7 +872,14 @@ int RunGoodies() {
                         } break;
                         
                         case SDLK_ESCAPE: {
-                            if (state == State::CUSTOM_MENU) break; // Don't handle this
+                            if (state == State::CUSTOM_MENU) {
+                                custom_menu.active = false;
+                                state = State::NORMAL;
+                                WriteConfig();
+                                break;
+                            }
+                            
+                            ClearSelections();
                             
                             state = State::NORMAL;
                             if (editing_link && !*editing_link->link && !*editing_link->description) {
@@ -769,9 +894,9 @@ int RunGoodies() {
                         } break;
                         
                         case SDLK_RETURN: case SDLK_TAB: {
-                            if (state == State::EDITING_NAME) {
-                                state = State::EDITING_DESC;
-                            } else if (state == State::EDITING_DESC) {
+                            if (state == State::EDITING_NAME ||
+                                state == State::EDITING_DESC)
+                            {
                                 state = State::NORMAL;
                                 editing_link->editing = false;
                                 editing_link = null;
@@ -779,6 +904,8 @@ int RunGoodies() {
                                 UpdateTextField(editing_field);
                                 editing_field->focus = false;
                                 editing_field = null;
+                            } else {
+                                OpenSelectedLinksNoChildren(start_link);
                             }
                         } break;
                         
@@ -794,8 +921,35 @@ int RunGoodies() {
                             }
                         } break;
                         
+                        case SDLK_c: {
+                            if (selection.link_count) {
+                                char *buffer = (char*)calloc(MAX_STRING_SIZE*selection.link_count, 1);
+                                for (int i = 0; i < selection.link_count; i++){
+                                    assert(selection.links[i]);
+                                    strcat(buffer, selection.links[i]->link);
+                                    strcat(buffer, "\n");
+                                }
+                                SDL_SetClipboardText(buffer);
+                                free(buffer);
+                            } else {
+                                Hover h = FindHoveredLink(start_link);
+                                if (h.link) {
+                                    MenuOperation op = { OnLink, h };
+                                    menu_copy_link(op);
+                                }
+                            }
+                        } break;
+                        
                         case SDLK_v: {
                             char *buffer = GetBufferFromState(state);
+                            if (!buffer) {
+                                Link *n = AddChildLink(null, "", "");
+                                n->editing = true;
+                                editing_link = n;
+                                state = State::EDITING_NAME;
+                                buffer = editing_link->link;
+                            }
+                            
                             if (buffer && (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]))
                             {
                                 char *clipboard = SDL_GetClipboardText();
@@ -827,21 +981,62 @@ int RunGoodies() {
                         window_height = event.window.data2;
                     }
                 } break;
-                case SDL_MOUSEBUTTONDOWN: {
-                    if (state == State::NORMAL && selection.box.x == -1) {
-                        selection.box.x = mx;
-                        selection.box.y = my+(int)view_y;
-                        selection.stored_x = selection.box.x;
-                        selection.stored_y = selection.box.y;
+                case SDL_MOUSEMOTION: {
+                    // NOTE: We no longer do dragging links
+                    
+                    
+                    // This if statement occurs once upon initially
+                    // moving the mouse when dragging a link.
+#if 0
+                    if (!selection.holding_link &&
+                        selection.stored_x != -1 &&
+                        (mx != selection.stored_x || my != selection.stored_y))
+                    {
+                        // Setup the link currently holding.
+                        Link *l = selection.holding_link = FindHoveredLink(start_link).link;
+                        
+                        // Remove it's references to the link hierarchy.
+                        if (l) {
+                            if (l->prev) {
+                                l->prev->next = l->next;
+                            } else if (!l->parent) {
+                                assert(l == start_link);
+                                start_link = start_link->next;
+                            }
+                            
+                            if (l->next) l->next->prev = l->prev;
+                            if (l->parent) l->parent->child = l->next;
+                            l->next = null;
+                        }
                     }
+#endif
+                } break;
+                case SDL_MOUSEBUTTONDOWN: {
+                    ClearSelections();
+                    selection.stored_x = mx;
+                    selection.stored_y = my;
                 } break;
                 case SDL_MOUSEBUTTONUP: {
                     int button = event.button.button;
-
+                    
+                    if (selection.active) {
+                        selection.box.x = selection.box.y = -1;
+                        selection.box.w = selection.box.h = 0;
+                        selection.active = false;
+                        selection.stored_x = -1;
+                        selection.stored_y = -1;
+                        selection.holding_link = null;
+                        break;
+                    }
+                    
+                    selection.stored_x = -1;
+                    selection.stored_y = -1;
+                    selection.holding_link = null;
+                    
                     if (button == SDL_BUTTON_LEFT)
                         mouse_clicked = true;
-
-                    if (!selection.isopen() && state == State::NORMAL) {
+                    
+                    if (state == State::NORMAL) {
                         if (button == SDL_BUTTON_LEFT && hover.link) {
                             if (hover.what_editing == State::EDITING_DESC) {
                                 state = hover.what_editing;
@@ -881,26 +1076,27 @@ int RunGoodies() {
                 } break;
             }
         }
-
+        
+        pmx = mx;
+        pmy = my;
         mouse = SDL_GetMouseState(&mx, &my);
         keys = SDL_GetKeyboardState(0);
-
+        
         view_y = lerp(view_y, view_to_y, scroll_t);
-
-        if (selection.box.x != -1) {
+        
+        if (mouse & SDL_BUTTON_LEFT &&
+            selection.stored_x != mx &&
+            selection.stored_y != my)
+        {
+            selection.active = true;
+            
             selection.box.x = selection.stored_x;
-            selection.box.y = selection.stored_y - (int)view_y;
+            selection.box.y = selection.stored_y;
             selection.box.w = mx - selection.box.x;
             selection.box.h = my - selection.box.y;
-
+            
+            ClearSelections();
             SetSelectionLinks(start_link);
-
-            if (!(mouse & SDL_BUTTON_LEFT)) {
-                // Execute some action.
-                selection.box.x = selection.box.y = -1;
-                selection.box.w = selection.box.h = 0;
-                //SetAllLinksNotHighlighted(start_link);
-            }
         }
 
         SDL_Color bgcol = CustomColor(CustomOption::BackgroundColor);
@@ -928,6 +1124,8 @@ int RunGoodies() {
         }
         
         DrawLinkAndChildLinks(start_link, PAD, pad+data.h);
+        
+        DrawSelection();
 
         SetAllLinksNotHighlighted(start_link);
         if (state == State::NORMAL) {
@@ -936,17 +1134,28 @@ int RunGoodies() {
                 hover.link->highlighted = true;
             }
         }
-
-        if (selection.isopen()) {
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(renderer, 70, 120, 200, 50);
-            SDL_RenderFillRect(renderer, &selection.box);
-            SDL_SetRenderDrawColor(renderer, 70, 120, 250, 255);
-            SDL_RenderDrawRect(renderer, &selection.box);
-        }
         
-        
-        {
+        if (selection.link_count) {
+            TextDrawData text_data = {};
+            strcpy(text_data.id, "ret");
+            strcpy(text_data.string, "Press ENTER to Open Selection");
+            text_data.font = font;
+            
+            int w, h;
+            TTF_SizeText(text_data.font, text_data.string, &w, &h);
+            
+            text_data.x = window_width-w-PAD;
+            text_data.y = window_height-h-PAD;
+            
+            double t = SDL_GetTicks()/100.0;
+            
+            double in = 0.5*(1+sin(t));
+            in /= 4;
+            in += 0.25;
+            text_data.color = { (Uint8)(255*in), (Uint8)(255*in), 0, 255 };
+            
+            TextDraw(renderer, &text_data);
+        } else {
             TextDrawData text_data = {};
             strcpy(text_data.id, "f8");
             strcpy(text_data.string, "Customize - F8");

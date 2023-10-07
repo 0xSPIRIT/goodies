@@ -1,20 +1,23 @@
 struct Selection {
+    bool active;
     int stored_x, stored_y;
+    Link *holding_link;
     SDL_Rect box;
     Link *links[1024];
     int link_count;
-
-    bool isopen() {
-        return box.w == box.h == 0;
-    }
 };
-Selection selection = { -1, -1, {-1, -1, 0, 0} };
+static Selection selection = {false, -1, -1, null, {-1, -1, -1, -1}, null, 0 };
+
+static void ClearSelections(void) {
+    for (int i = 0; i < 1024; i++) {
+        if (selection.links[i] == null) continue;
+        selection.links[i]->selected = false;
+        selection.links[i] = null;
+    }
+    selection.link_count = 0;
+}
 
 static void SetSelectionLinks(Link *start) {
-    for (int i = 0; i < 1024; i++)
-        selection.links[i] = null;
-    selection.link_count = 0;
-
     SDL_Rect box = selection.box;
 
     if (box.w < 0) {
@@ -30,14 +33,15 @@ static void SetSelectionLinks(Link *start) {
          a;
          a = a->next)
     {
-        a->highlighted = false;
+        a->selected = false;
         if (RectIntersectsWithRect(a->link_visible_rect, box) ||
             RectIntersectsWithRect(a->desc_visible_rect, box)) {
             if (selection.link_count < 1024) {
                 selection.links[selection.link_count++] = a;
-                a->highlighted = true;
+                a->selected = true;
             }
         }
+        
         SetSelectionLinks(a->child);
     }
 }
@@ -109,6 +113,13 @@ static void MenuOff(Menu *menu) {
 #define prf() printf("%s\n", __func__)
 
 // Hooks
+
+void menu_copy_link(MenuOperation operation) {
+    global_menu.active = false;
+    state = State::NORMAL;
+    SDL_SetClipboardText(operation.hover.link->link);
+}
+
 void menu_edit_link(MenuOperation operation) {
     global_menu.active = false;
     state = operation.hover.what_editing;
@@ -263,6 +274,7 @@ static void OpenMenu(Menu *menu, MenuOperation op) {
         case MenuOp::OnLink: {
             if (op.hover.what_editing == State::EDITING_NAME) {
                 MenuOption options[] = {
+                    {"Copy", menu_copy_link},
                     {"Edit", menu_edit_link},
                     {"Edit Description", menu_edit_description},
                     {"Add Child Link", menu_add_child_link},
@@ -271,7 +283,7 @@ static void OpenMenu(Menu *menu, MenuOperation op) {
                     {"Delete Link", menu_delete_link},
                     {"Toggle Collapse", menu_toggle_collapse_link}
                 };
-                SetMenuOptions(menu, options, 7);
+                SetMenuOptions(menu, options, 8);
             }
         } break;
         case MenuOp::OutsideLink: {

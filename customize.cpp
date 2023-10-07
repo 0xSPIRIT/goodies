@@ -10,7 +10,7 @@
 
 #define CustomField(X) (custom_menu.options[X].field)
 #define CustomCheckbox(X) (custom_menu.options[X].checkbox.active)
-#define CustomColor(X) string_to_hex_rgb(CustomField(X).input)
+#define CustomColor(X) string_to_hex_rgb(CustomField(X).stable_input)
 
 enum CustomOption {
     //DescriptionFirst,
@@ -136,9 +136,9 @@ void UpdateTextField(Text_Field *field) {
             TTF_CloseFont(title_font);
             title_font = new_titlefont;
         }
-        
-        strcpy(field->stable_input, field->input);
     }
+        
+    strcpy(field->stable_input, field->input);
 }
 
 void RunTextField(Text_Field *field) {
@@ -410,7 +410,7 @@ static void WriteConfig(void) {
     fclose(fp);
 }
 
-static void LoadConfig(void) {
+void LoadConfig(void) {
     assert(*config_path);
     
     FILE *fp = fopen(config_path, "r");
@@ -451,6 +451,16 @@ static void LoadConfig(void) {
                 strcpy(option->field.input, option->field.stable_input);
                 if (option->type.option == CustomOption::GoodieFile) {
                     strcpy(filepath, option->field.stable_input);
+                }
+                
+                if (option->type.option == CustomOption::GoodieFile ||
+                    option->type.option == CustomOption::Font) {
+                    
+                    if (!FileExists(option->field.stable_input)) {
+                        fclose(fp);
+                        CommonFileErrorAndExit(option->field.stable_input, config_path);
+                    }
+                    
                 }
             } break;
         }

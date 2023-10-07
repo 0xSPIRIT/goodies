@@ -152,3 +152,18 @@ inline static void NewFile(char *out) {
     else
         exit(0);
 }
+
+BOOL FileExists(LPCTSTR szPath) {
+    DWORD dwAttrib = GetFileAttributes(szPath);
+    
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES && 
+            !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+void CommonFileErrorAndExit(const char *file, const char *config_path) {
+    char message[MAX_STRING_SIZE] = {};
+    sprintf(message, "Couldn't load file \"%s\"\nWe'll delete your config file, then exit.\n\nReopen goodies to re-choose your links file.", file);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error!", message, 0);
+    DeleteFile(config_path);
+    exit(1);
+}
