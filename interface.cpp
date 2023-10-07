@@ -46,6 +46,14 @@ static void SetSelectionLinks(Link *start) {
     }
 }
 
+void SelectAll(Link *start) {
+    for (Link *l = start; l; l = l->next) {
+        l->selected = true;
+        selection.links[selection.link_count++] = l;
+        SelectAll(l->child);
+    }
+}
+
 struct Button {
     SDL_Texture *texture;
     char text[MAX_STRING_SIZE]; // optional

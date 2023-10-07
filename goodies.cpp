@@ -862,6 +862,13 @@ int RunGoodies() {
                             }
                         } break;
                         
+                        case SDLK_a: {
+                            if (keys[SDL_SCANCODE_LCTRL]) {
+                                ClearSelections();
+                                SelectAll(start_link);
+                            }
+                        } break;
+                        
                         case SDLK_UP: {
                             if (state == State::NORMAL)
                                 view_to_y -= scroll_speed;
