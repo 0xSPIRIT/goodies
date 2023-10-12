@@ -16,22 +16,22 @@ struct TextDrawData {
     int w, h; // Out
 };
 
-static TextDrawData text_cache[MAX_TEXT_COUNT] = {};
-static int text_cache_count = 0;
+TextDrawData text_cache[MAX_TEXT_COUNT] = {};
+int text_cache_count = 0;
 bool global_should_update_text = false;
 
-static TextDrawData *FindTextDataInCache(char id[32]) {
+TextDrawData *FindTextDataInCache(char id[32]) {
     for (int i = 0; i < text_cache_count; i++) {
         if (strcmp(text_cache[i].id, id) == 0) return &text_cache[i];
     }
     return null;
 }
 
-static void AddTextDataToCache(TextDrawData *a) {
+void AddTextDataToCache(TextDrawData *a) {
     text_cache[text_cache_count++] = *a;
 }
 
-static bool HasTextDataChanged(TextDrawData *a, TextDrawData *b) {
+bool HasTextDataChanged(TextDrawData *a, TextDrawData *b) {
     if (a->font != b->font) return true;
     if (a->wrapped != b->wrapped) return true;
     if (a->wrap_width != b->wrap_width) return true;
@@ -41,7 +41,7 @@ static bool HasTextDataChanged(TextDrawData *a, TextDrawData *b) {
     return false;
 }
 
-static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
+void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
     bool should_redraw = data->force_redraw || global_should_update_text;
     TextDrawData *cache_object = FindTextDataInCache(data->id);
 
@@ -116,14 +116,14 @@ static void TextDraw(SDL_Renderer *renderer, TextDrawData *data) {
 
 //~ Other stuff
 
-inline static bool PointIntersectsWithRect(SDL_Point a, SDL_Rect r) {
+inline bool PointIntersectsWithRect(SDL_Point a, SDL_Rect r) {
     if (a.x >= r.x && a.y >= r.y &&
         a.x <= r.x+r.w && a.y <= r.y+r.h)
         return true;
     return false;
 }
 
-inline static bool RectIntersectsWithRect(SDL_Rect r1, SDL_Rect r2) {
+inline bool RectIntersectsWithRect(SDL_Rect r1, SDL_Rect r2) {
     bool noOverlap = r1.x >= r2.x+r2.w ||
         r2.x >= r1.x+r1.w ||
         r1.y >= r2.y+r2.h ||
@@ -131,11 +131,11 @@ inline static bool RectIntersectsWithRect(SDL_Rect r1, SDL_Rect r2) {
     return !noOverlap;
 }
 
-inline static float lerp(float a, float b, float t) {
+inline float lerp(float a, float b, float t) {
     return a+(b-a)*t;
 }
 
-inline static void NewFile(char *out) {
+inline void NewFile(char *out) {
     OPENFILENAME ofn = {};
     char fileName[MAX_PATH] = "";
     ZeroMemory(&ofn, sizeof(ofn));

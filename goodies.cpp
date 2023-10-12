@@ -1,10 +1,9 @@
-// TODO:
-//  - When something is collapsed, select all child links as well
-//  - Bulk actions with selections.
-//    - Moving links under another link via click and drag
-//  - Profile it to ensure when adding links, all the ID's are
-//    proper and nothing has the IDs, making it re-draw text
-//    every frame.
+// Don't look at this program too closely, it's not structured
+// very well. Lots of global state and stuff. That's alright.
+// The program is small enough to get away with that.
+//
+// Obviously the only time I program this is when I'm horny.
+// Don't horny-code.
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
@@ -21,54 +20,9 @@
 #define null 0
 
 #include "util.cpp"
+#include "dpi.cpp"
 
 #define PAD 32
-
-
-
-     // Taken from https://github.com/kumar8600/win32_SetProcessDpiAware/blob/master/win32_SetProcessDpiAware.c
-     //
-     // Created by kumar on 2016/03/29.
-     //
-
-     typedef enum PROCESS_DPI_AWARENESS
-     {
-         PROCESS_DPI_UNAWARE = 0,
-         PROCESS_SYSTEM_DPI_AWARE = 1,
-         PROCESS_PER_MONITOR_DPI_AWARE = 2
-     } PROCESS_DPI_AWARENESS;
-
-     typedef BOOL (WINAPI * SETPROCESSDPIAWARE_T)(void);
-     typedef HRESULT (WINAPI * SETPROCESSDPIAWARENESS_T)(PROCESS_DPI_AWARENESS);
-
-     inline bool win32_SetProcessDpiAware(void) {
-         HMODULE shcore = LoadLibraryA("Shcore.dll");
-         SETPROCESSDPIAWARENESS_T SetProcessDpiAwareness = NULL;
-         if (shcore) {
-             SetProcessDpiAwareness = (SETPROCESSDPIAWARENESS_T) GetProcAddress(shcore, "SetProcessDpiAwareness");
-         }
-         HMODULE user32 = LoadLibraryA("User32.dll");
-         SETPROCESSDPIAWARE_T SetProcessDPIAware = NULL;
-         if (user32) {
-             SetProcessDPIAware = (SETPROCESSDPIAWARE_T) GetProcAddress(user32, "SetProcessDPIAware");
-         }
-    
-         bool ret = false;
-         if (SetProcessDpiAwareness) {
-             ret = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) == S_OK;
-         } else if (SetProcessDPIAware) {
-             ret = SetProcessDPIAware() != 0;
-         }
-    
-         if (user32) {
-             FreeLibrary(user32);
-         }
-         if (shcore) {
-             FreeLibrary(shcore);
-         }
-         return ret;
-     }
-
 
 struct Link {
     int id;
@@ -93,13 +47,14 @@ enum State {
     CUSTOM_MENU
 };
 
+// Lots of global variables because we're a dirty little boy!
+
 static int state = State::NORMAL;
 static bool first_edit = false;
 
 static char config_path[MAX_PATH];
 
 static Link *start_link = null;
-static Link *curr_link = null; // The top-level thing.
 static Link *editing_link = null;
 
 struct Hover {
@@ -143,7 +98,7 @@ static void FreeEverything();
 #include "interface.cpp"
 #include "customize.cpp"
 
-static void FreeLinks(Link *start) {
+void FreeLinks(Link *start) {
     if (!start) return;
 
     Link *next = null;
@@ -157,7 +112,7 @@ static void FreeLinks(Link *start) {
     }
 }
 
-static void OpenLinks(Link *links[], int lc) {
+void OpenLinks(Link *links[], int lc) {
     char message[MAX_STRING_SIZE*2] = {};
     for (int i = 0; i < lc; i++)
         sprintf(message, "%s %s", message, links[i]->link);
@@ -185,7 +140,7 @@ static void OpenLinks(Link *links[], int lc) {
     ShellExecuteA(0, 0, browser_string, command, 0, SW_SHOWMAXIMIZED);
 }
 
-static void OpenSelectedLinksNoChildren(Link *start) {
+void OpenSelectedLinksNoChildren(Link *start) {
     Link **links = (Link**)calloc(link_count, sizeof(Link*));
     int i = 0;
         
@@ -204,15 +159,25 @@ static void OpenSelectedLinksNoChildren(Link *start) {
     free(links);
 }
 
-static Link *AddChildLink(Link *parent, const char *link, const char *description) {
-    Link *new_link = null;
+Link *LastLink(Link *start) {
+    for (Link *result = start;
+         result;
+         result = result->next)
+    {
+        if (!result->next) return result;
+    }
+    return null;
+}
 
+Link *AddChildLink(Link *parent, const char *link, const char *description) {
+    Link *new_link = null;
+    
     if (parent == null) { // Add to the end of the main list
         if (!start_link) {
             start_link = (Link*)calloc(1, sizeof(Link));
-            curr_link = start_link;
-            new_link = curr_link;
+            new_link = start_link;
         } else {
+            Link *curr_link = LastLink(start_link);
             curr_link->next = (Link*)calloc(1, sizeof(Link));
             curr_link->next->prev = curr_link;
             curr_link = curr_link->next;
@@ -238,12 +203,11 @@ static Link *AddChildLink(Link *parent, const char *link, const char *descriptio
     strcpy(new_link->link, link);
     strcpy(new_link->description, description);
 
-
     return new_link;
 }
 
 // Returns the width of the cursor drawn
-static int DrawCursor(TTF_Font *fnt, int x, int y) {
+int DrawCursor(TTF_Font *fnt, int x, int y) {
     int width = -1;
     int height = -1;
 
@@ -268,14 +232,14 @@ static int DrawCursor(TTF_Font *fnt, int x, int y) {
     return width;
 }
 
-static bool LinkOutOfView(int x, int y) {
+bool LinkOutOfView(int x, int y) {
     (void)x;
     if (y > view_y+window_height) return true;
     if (y < view_y) return true;
     return false;
 }
 
-static void DrawLinkArrow(Link *link, int x, int y, int height) {
+void DrawLinkArrow(Link *link, int x, int y, int height) {
     if (!link->child) return;
     
     SDL_Rect dst = {
@@ -315,7 +279,7 @@ static void DrawLinkArrow(Link *link, int x, int y, int height) {
     }
 }
 
-static int DrawLink(Link *link, int x, int y) {
+int DrawLink(Link *link, int x, int y) {
     int link_w = 0;
     int height = 0;
 
@@ -444,7 +408,7 @@ static int DrawLink(Link *link, int x, int y) {
     return height;
 }
 
-static void SetAllLinksNotHighlighted(Link *start) {
+void SetAllLinksNotHighlighted(Link *start) {
     if (!start) return;
 
     for (Link *a = start;
@@ -457,7 +421,7 @@ static void SetAllLinksNotHighlighted(Link *start) {
 }
 
 // Find link that you're highlighted on and return it.
-static Hover FindHoveredLink(Link *start) {
+Hover FindHoveredLink(Link *start) {
     if (!start) return {};
 
     for (Link *a = start;
@@ -477,7 +441,7 @@ static Hover FindHoveredLink(Link *start) {
     return {};
 }
 
-static int DrawLinkAndChildLinks(Link *link, int x, int y) {
+int DrawLinkAndChildLinks(Link *link, int x, int y) {
     if (!link) return 0;
 
     int cumh = 0;
@@ -497,7 +461,7 @@ static int DrawLinkAndChildLinks(Link *link, int x, int y) {
     return cumh;
 }
 
-static inline char *GetBufferFromState(int s) {
+inline char *GetBufferFromState(int s) {
     char *buffer = null;
     if (s == State::EDITING_NAME) {
         assert(editing_link);
@@ -511,7 +475,7 @@ static inline char *GetBufferFromState(int s) {
     return buffer;
 }
 
-static void WriteLinksToFile(FILE *fp, Link *start, int layer) {
+void WriteLinksToFile(FILE *fp, Link *start, int layer) {
     if (!start) return;
 
     for (Link *a = start;
@@ -525,14 +489,14 @@ static void WriteLinksToFile(FILE *fp, Link *start, int layer) {
     }
 }
 
-static void DrawSelection(void) {
+void DrawSelection(void) {
     //selection.box.y += (int)view_y;
     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 120);
     SDL_RenderDrawRect(renderer, &selection.box);
     //selection.box.y -= (int)view_y;
 }
 
-static Link *FindHoveredLinkAt(Link *start, int x, int y) {
+Link *FindHoveredLinkAt(Link *start, int x, int y) {
     if (!start) return null;
 
     for (Link *a = start;
@@ -549,86 +513,13 @@ static Link *FindHoveredLinkAt(Link *start, int x, int y) {
     return null;
 }
 
-#if 0
-static Link *FindLinkBelowMouse(void) {
-    Link *l = null;
-    
-    int x = mx, y = my+(int)view_y;
-    
-    int h;
-    
-    TTF_SizeText(font, "A", null, &h);
-    
-    h *= 2;
-    
-    while (l == null && abs(y - (my+(int)view_y)) < h) {
-        l = FindHoveredLinkAt(start_link, x, y++);
-    }
-    
-    return l;
-}
-#endif
-
-// Find the hovered link, or the previous link at the mouse's position.
-struct LinkResult {
-    Link *hovered_link;
-    Link *prev_link;
-};
-#if 0
-static LinkResult FindHoveredLinkOrPreviousLink(void) {
-    LinkResult result = {};
-    
-    result.hovered_link = FindHoveredLink(start_link).link;
-    if (!result.hovered_link) {
-        Link *l = FindLinkBelowMouse(); 
-        if (l)
-            result.prev_link = l->prev;
-    }
-    
-    return result;
-}
-#endif
-
-#if 0
-static void AttemptDropSelection(void) {
-    if (!selection.holding_link) return;
-    
-    LinkResult result = FindHoveredLinkOrPreviousLink();
-    
-    if (result.hovered_link) {
-        // Add as a child link to result.hovered_link.
-        Link *l = null;
-        for (l = result.hovered_link->child;
-             l && l->next;
-             l = l->next);
-        if (l) {
-            l->next = selection.holding_link;
-            selection.holding_link->prev = l;
-        } else {
-            result.hovered_link->child = selection.holding_link;
-        }
-        selection.holding_link->parent = result.hovered_link;
-    } else {
-        // Add in-between to the previous link
-        if (result.prev_link) {
-            //result.prev_link->next->prev = selection.holding_link;
-            //result.prev_link->next = selection.holding_link;
-            selection.holding_link->next = result.prev_link->next;
-            selection.holding_link->prev = result.prev_link;
-            selection.holding_link->parent = result.prev_link->parent; // Since they're at the same level.
-            result.prev_link->next = selection.holding_link;
-        }
-    }
-}
-#endif
-
-static void SaveToFile() {
+void SaveToFile() {
     FILE *fp = fopen(filepath, "w");
     WriteLinksToFile(fp, start_link, 0);
     fclose(fp);
 }
 
-static void LoadFileRaw(FILE *fp) {
+void LoadFileRaw(FILE *fp) {
     while (!feof(fp)) {
         char link[MAX_STRING_SIZE] = {};
         fscanf(fp, "%[^\n]", link);
@@ -642,7 +533,7 @@ static void LoadFileRaw(FILE *fp) {
     }
 }
 
-static void LoadFile(const char *file) {
+void LoadFile(const char *file) {
     FILE *fp = fopen(file, "r");
     if (!fp) {
         CommonFileErrorAndExit(file, config_path);
@@ -710,7 +601,7 @@ static void LoadFile(const char *file) {
     fclose(fp);
 }
 
-static void FreeEverything() {
+void FreeEverything() {
     for (int i = 0; i < text_cache_count; i++) {
         if (text_cache[i].texture)
             SDL_DestroyTexture(text_cache[i].texture);
@@ -929,20 +820,22 @@ int RunGoodies() {
                         } break;
                         
                         case SDLK_c: {
-                            if (selection.link_count) {
-                                char *buffer = (char*)calloc(MAX_STRING_SIZE*selection.link_count, 1);
-                                for (int i = 0; i < selection.link_count; i++){
-                                    assert(selection.links[i]);
-                                    strcat(buffer, selection.links[i]->link);
-                                    strcat(buffer, "\n");
-                                }
-                                SDL_SetClipboardText(buffer);
-                                free(buffer);
-                            } else {
-                                Hover h = FindHoveredLink(start_link);
-                                if (h.link) {
-                                    MenuOperation op = { OnLink, h };
-                                    menu_copy_link(op);
+                            if (keys[SDL_SCANCODE_LCTRL]) {
+                                if (selection.link_count) {
+                                    char *buffer = (char*)calloc(MAX_STRING_SIZE*selection.link_count, 1);
+                                    for (int i = 0; i < selection.link_count; i++){
+                                        assert(selection.links[i]);
+                                        strcat(buffer, selection.links[i]->link);
+                                        strcat(buffer, "\n");
+                                    }
+                                    SDL_SetClipboardText(buffer);
+                                    free(buffer);
+                                } else {
+                                    Hover h = FindHoveredLink(start_link);
+                                    if (h.link) {
+                                        MenuOperation op = { OnLink, h };
+                                        menu_copy_link(op);
+                                    }
                                 }
                             }
                         } break;

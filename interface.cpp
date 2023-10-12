@@ -6,9 +6,9 @@ struct Selection {
     Link *links[1024];
     int link_count;
 };
-static Selection selection = {false, -1, -1, null, {-1, -1, -1, -1}, null, 0 };
+Selection selection = {false, -1, -1, null, {-1, -1, -1, -1}, null, 0 };
 
-static void ClearSelections(void) {
+void ClearSelections(void) {
     for (int i = 0; i < 1024; i++) {
         if (selection.links[i] == null) continue;
         selection.links[i]->selected = false;
@@ -17,9 +17,9 @@ static void ClearSelections(void) {
     selection.link_count = 0;
 }
 
-static void SetSelectionLinks(Link *start) {
+void SetSelectionLinks(Link *start) {
     SDL_Rect box = selection.box;
-
+    
     if (box.w < 0) {
         box.w *= -1;
         box.x -= box.w;
@@ -28,7 +28,7 @@ static void SetSelectionLinks(Link *start) {
         box.h *= -1;
         box.y -= box.h;
     }
-
+    
     for (Link *a = start;
          a;
          a = a->next)
@@ -65,12 +65,12 @@ struct ButtonResult {
     bool highlighted, clicked;
 };
 
-static ButtonResult TickButton(Button *button, int x, int y) {
+ButtonResult TickButton(Button *button, int x, int y) {
     ButtonResult result = {};
-
+    
     SDL_Point ms = {mx, my};
     SDL_Rect rect = {x, y - (int)view_y, button->w, button->h};
-
+    
     if (PointIntersectsWithRect(ms, rect)) {
         result.highlighted = true;
         if (button->texture)
@@ -78,10 +78,10 @@ static ButtonResult TickButton(Button *button, int x, int y) {
         if (mouse_clicked)
             result.clicked = true;
     }
-
+    
     if (button->texture)
         SDL_RenderCopy(renderer, button->texture, NULL, &rect);
-
+    
     return result;
 }
 
@@ -112,7 +112,7 @@ struct Menu {
 };
 Menu global_menu = {};
 
-static void MenuOff(Menu *menu) {
+void MenuOff(Menu *menu) {
     menu->active = false;
     state = State::NORMAL;
     mouse_clicked = false;
@@ -136,22 +136,22 @@ void menu_edit_link(MenuOperation operation) {
     first_edit = true;
 }
 
-static Link *AddChildLink(Link *parent, const char *link, const char *description);
+Link *AddChildLink(Link *parent, const char *link, const char *description);
 
-static void menu_add_child_link(MenuOperation operation) {
+void menu_add_child_link(MenuOperation operation) {
     Link *link = operation.hover.link;
-
+    
     Link *n = AddChildLink(link, "", "");
-
+    
     n->editing = true;
     editing_link = n;
     state = State::EDITING_NAME;
     global_menu.active = false;
 }
 
-static void menu_insert_link(MenuOperation operation, bool after) {
+void menu_insert_link(MenuOperation operation, bool after) {
     Link *link = operation.hover.link;
-
+    
     if (after) {
         Link *n = null;
         n = (Link*)calloc(1, sizeof(Link));
@@ -192,15 +192,15 @@ static void menu_insert_link(MenuOperation operation, bool after) {
     global_menu.active = false;
 }
 
-static void menu_insert_link_after(MenuOperation operation) {
+void menu_insert_link_after(MenuOperation operation) {
     menu_insert_link(operation, true);
 }
 
-static void menu_insert_link_before(MenuOperation operation) {
+void menu_insert_link_before(MenuOperation operation) {
     menu_insert_link(operation, false);
 }
 
-static void menu_add_link(MenuOperation operation) {
+void menu_add_link(MenuOperation operation) {
     (void)operation;
     Link *n = AddChildLink(null, "", "");
     n->editing = true;
@@ -209,14 +209,14 @@ static void menu_add_link(MenuOperation operation) {
     global_menu.active = false;
 }
 
-static void menu_edit_description(MenuOperation operation) {
+void menu_edit_description(MenuOperation operation) {
     assert(operation.hover.link);
     state = State::EDITING_DESC;
     editing_link = operation.hover.link;
     global_menu.active = false;
 }
 
-static void menu_delete_link(MenuOperation operation) {
+void menu_delete_link(MenuOperation operation) {
     Link *link = operation.hover.link;
     if (link->prev) {
         link->prev->next = link->next;
@@ -236,7 +236,7 @@ static void menu_delete_link(MenuOperation operation) {
     state = State::NORMAL;
 }
 
-static void menu_toggle_collapse_link(MenuOperation operation) {
+void menu_toggle_collapse_link(MenuOperation operation) {
     Link *link = operation.hover.link;
     
     link->collapsed = !link->collapsed;
@@ -245,17 +245,17 @@ static void menu_toggle_collapse_link(MenuOperation operation) {
     state = State::NORMAL;
 }
 
-static void SetMenuOptions(Menu *menu, MenuOption options[], int option_count) {
+void SetMenuOptions(Menu *menu, MenuOption options[], int option_count) {
     menu->option_count = option_count;
-
+    
     for (int i = 0; i < option_count; i++) {
         menu->options[i] = options[i];
     }
 }
 
-static Menu MakeMenu() {
+Menu MakeMenu() {
     Menu menu = {};
-
+    
     menu.target = SDL_CreateTexture(renderer,
                                     SDL_PIXELFORMAT_UNKNOWN,
                                     SDL_TEXTUREACCESS_TARGET,
@@ -263,21 +263,21 @@ static Menu MakeMenu() {
                                     1000);
     assert(menu.target);
     SDL_SetTextureBlendMode(menu.target, SDL_BLENDMODE_BLEND);
-
+    
     return menu;
 }
 
-static void FreeMenu(Menu *menu) {
+void FreeMenu(Menu *menu) {
     SDL_DestroyTexture(menu->target);
 }
 
-static void OpenMenu(Menu *menu, MenuOperation op) {
+void OpenMenu(Menu *menu, MenuOperation op) {
     menu->active = true;
     menu->x = mx;
     menu->y = my;
     menu->op = op;
     state = State::RIGHT_CLICK;
-
+    
     switch(op.op){
         case MenuOp::OnLink: {
             if (op.hover.what_editing == State::EDITING_NAME) {
@@ -302,19 +302,19 @@ static void OpenMenu(Menu *menu, MenuOperation op) {
     }
 }
 
-static void DrawMenu(Menu *menu) {
+void DrawMenu(Menu *menu) {
     if (!menu->active) return;
-
+    
     assert(SDL_SetRenderTarget(renderer, menu->target) == 0);
-
+    
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
     SDL_RenderClear(renderer);
-
+    
     int cumh = 0;
     int width = 0;
-
+    
     bool clicked_any_option = false;
-
+    
     for (int i = 0; i < menu->option_count; i++) {
         TextDrawData data = {};
         sprintf(data.id, "menu %d", i);
@@ -327,46 +327,46 @@ static void DrawMenu(Menu *menu) {
         data.color = SDL_Color{255,255,255,255};
         int w, h;
         TTF_SizeText(data.font, data.string, &w, &h);
-
+        
         Button b = {};
         b.texture = null;
         b.w = w;
         b.h = h;
-
+        
         ButtonResult r = TickButton(&b, menu->x+data.x, menu->y+data.y+(int)view_y);
         if (r.highlighted) {
             data.color = SDL_Color{127,127,127,255};
         }
-
+        
         TextDraw(renderer, &data);
         cumh += data.h;
-
+        
         if (r.clicked) {
             clicked_any_option = true;
             if (menu->options[i].hook) {
                 menu->options[i].hook(menu->op);
             }
         }
-
+        
         if (data.w > width) width = data.w;
     }
-
+    
     if (!clicked_any_option && mouse_clicked) {
         MenuOff(menu);
     }
-
+    
     SDL_SetRenderTarget(renderer, NULL);
-
+    
     SDL_Rect r = {
         menu->x, menu->y,
         width, cumh
     };
-
+    
     SDL_SetRenderDrawColor(renderer, 16, 16, 16, 255);
     SDL_RenderFillRect(renderer, &r);
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderDrawRect(renderer, &r);
-
+    
     SDL_Rect dst = {
         menu->x, menu->y,
         1000, 1000

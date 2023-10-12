@@ -1,7 +1,7 @@
 FileVersion = 1
 LastConfig = "Debug"
 LastPlatform = "Win64"
-RecentFilesList = ["d:\\dev\\viewer\\goodies.cpp", "d:\\dev\\viewer\\interface.cpp", "d:\\dev\\viewer\\minkernel\\crts\\ucrt\\src\\appcrt\\lowio\\lseek.cpp", "d:\\a01\\_work\\43\\s\\src\\vctools\\crt\\vcstartup\\src\\startup\\exe_common.inl", "d:\\dev\\viewer\\customize.cpp", "d:\\dev\\viewer\\util.cpp", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\video\\windows\\SDL_windowsmessagebox.c", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\render\\direct3d\\SDL_render_d3d.c", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\stdlib\\SDL_string.c"]
+RecentFilesList = ["d:\\dev\\viewer\\customize.cpp", "d:\\dev\\viewer\\goodies.cpp", "d:\\dev\\viewer\\interface.cpp", "d:\\dev\\viewer\\minkernel\\crts\\ucrt\\src\\appcrt\\lowio\\lseek.cpp", "d:\\a01\\_work\\43\\s\\src\\vctools\\crt\\vcstartup\\src\\startup\\exe_common.inl", "d:\\dev\\viewer\\util.cpp", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\video\\windows\\SDL_windowsmessagebox.c", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\render\\direct3d\\SDL_render_d3d.c", "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.clean\\src\\stdlib\\SDL_string.c"]
 
 [MainWindow]
 X = 0
@@ -31,13 +31,14 @@ DefaultDocumentsTabbedView = true
 Type = "TabbedView"
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
+Active = true
 TabLabel = "customize.cpp"
 TabWidth = 111.6327
 TabIsPinned = false
 Type = "SourceViewPanel"
 FilePath = "d:\\dev\\viewer\\customize.cpp"
-CursorPos = 3733
-VertPos = 10588.0
+CursorPos = 11463
+VertPos = 8304.0
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
 TabLabel = "util.cpp"
@@ -45,7 +46,7 @@ TabWidth = 72.17687
 TabIsPinned = false
 Type = "SourceViewPanel"
 FilePath = "d:\\dev\\viewer\\util.cpp"
-CursorPos = 4762
+CursorPos = 4706
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
 TabLabel = "SDL_windowsmessagebox.c"
@@ -69,8 +70,8 @@ TabWidth = 104.1497
 TabIsPinned = false
 Type = "SourceViewPanel"
 FilePath = "d:\\dev\\viewer\\interface.cpp"
-CursorPos = 1333
-VertPos = 1558.0
+CursorPos = 3948
+VertPos = 7944.0
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
 TabLabel = "SDL_string.c"
@@ -81,17 +82,16 @@ FilePath = "d:\\Programs\\vcpkg\\buildtrees\\sdl2\\src\\ase-2.26.1-ec5f9ae536.cl
 CursorPos = 9082
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets.Tabs]]
-Active = true
 TabLabel = "goodies.cpp"
 TabWidth = 99.38776
 TabIsPinned = false
 Type = "SourceViewPanel"
 FilePath = "d:\\dev\\viewer\\goodies.cpp"
-CursorPos = 23796
-VertPos = 20424.0
+CursorPos = 15802
+VertPos = 14544.0
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets]]
-RequestedWidth = 703.0
+RequestedWidth = 933.0
 RequestedHeight = 300.0
 Type = "DockingFrame"
 SplitType = 2
@@ -116,8 +116,8 @@ TabLabel = "Watch"
 TabWidth = 86.05442
 TabIsPinned = false
 Type = "WatchPanel"
-Columns = [{Width = 240.0}, {Width = 393.0}, {Width = 240.0}]
-Items = ["selection", ""]
+Columns = [{Width = 240.0}, {Width = 468.0}, {Width = 240.0}]
+Items = ["start_link", "new_link", "config_path", "filepath", ""]
 
 [[MainDockingFrame.DockedWidgets.DockedWidgets.DockedWidgets.Tabs]]
 TabLabel = "Auto"
@@ -156,6 +156,12 @@ TabLabel = "Breakpoints"
 TabWidth = 117.3469
 TabIsPinned = false
 Type = "BreakpointPanel"
+
+[[Breakpoints]]
+Symbol = "AddChildLink"
+
+[[Breakpoints]]
+Symbol = "menu_add_link"
 
 [[BookmarkFolders]]
 Title = ""

@@ -1,13 +1,3 @@
-// TODO:
-//  - Customization options (popup menu)
-//      - Description first, then link.
-//      x Font & Size
-//      x Color
-//      x Browser
-//      x Load different goodie file
-//      x Delete config file
-//      x Don't use incognito
-
 #define CustomField(X) (custom_menu.options[X].field)
 #define CustomCheckbox(X) (custom_menu.options[X].checkbox.active)
 #define CustomColor(X) string_to_hex_rgb(CustomField(X).stable_input)
@@ -369,7 +359,7 @@ void DrawCustomMenu() {
                 if (result.clicked) {
                     DeleteFileA(config_path);
                     SaveToFile();
-                    FreeEverything();
+                    //FreeEverything(); // There's no reason to free everything here. The OS cleans everything.
                     exit(0);
                 }
             } break;
@@ -385,7 +375,7 @@ void DrawCustomMenu() {
         UpdateTextField(editing_field);
 }
 
-static void WriteConfig(void) {
+void WriteConfig(void) {
     assert(*config_path);
     
     FILE *fp = fopen(config_path, "w");
