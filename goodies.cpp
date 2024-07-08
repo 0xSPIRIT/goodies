@@ -8,6 +8,8 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
 
+#include <shlwapi.h>
+#include <iphlpapi.h>
 #include <windows.h>
 #include <shlobj_core.h>
 #include <stdio.h>
@@ -53,6 +55,7 @@ static int state = State::NORMAL;
 static bool first_edit = false;
 
 static char config_path[MAX_PATH];
+static char config_directory[MAX_PATH];
 
 static Link *start_link = null;
 static Link *editing_link = null;
@@ -94,9 +97,11 @@ static void FreeLinks(Link *start);
 static void SaveToFile();
 static int DrawCursor(TTF_Font *fnt, int x, int y);
 static void FreeEverything();
+static void OpenLink(Link link, bool open_privately);
 
 #include "interface.cpp"
 #include "customize.cpp"
+#include "server.cpp"
 
 void FreeLinks(Link *start) {
     if (!start) return;
@@ -112,14 +117,14 @@ void FreeLinks(Link *start) {
     }
 }
 
-void OpenLinks(Link *links[], int lc) {
+void OpenLinks(Link *links[], int lc, bool open_privately) {
     char message[MAX_STRING_SIZE*2] = {};
     for (int i = 0; i < lc; i++)
         sprintf(message, "%s %s", message, links[i]->link);
 
     char command[MAX_STRING_SIZE] = {};
     
-    if (CustomCheckbox(CustomOption::OpenIncognito)) {
+    if (open_privately) {
         if (CustomCheckbox(CustomOption::UseChrome)) {
             sprintf(command, "%s -incognito", message);
         } else {
@@ -140,23 +145,17 @@ void OpenLinks(Link *links[], int lc) {
     ShellExecuteA(0, 0, browser_string, command, 0, SW_SHOWMAXIMIZED);
 }
 
-void OpenSelectedLinksNoChildren(Link *start) {
-    Link **links = (Link**)calloc(link_count, sizeof(Link*));
-    int i = 0;
-        
-    for (Link *a = start;
-         a;
-         a = a->next)
-    {
-        if (a->selected) {
-            links[i++] = a;
-        }
-    }
-    
-    if (i)
-        OpenLinks(links, i);
-    
-    free(links);
+void OpenLinks(Link *links[], int lc) {
+    OpenLinks(links, lc, CustomCheckbox(CustomOption::OpenIncognito));
+}
+
+static void OpenLink(Link link, bool open_privately) {
+    Link *links[] = {&link};
+    OpenLinks(links, 1, open_privately);
+}
+
+void OpenSelectedLinksNoChildren() {
+    OpenLinks(selection.links, selection.link_count);
 }
 
 Link *LastLink(Link *start) {
@@ -646,6 +645,7 @@ int RunGoodies() {
     GetCurrentDirectory(MAX_PATH, cwd);
 
     SHGetFolderPathA(null, CSIDL_APPDATA, null, 0, config_path);
+    strcpy(config_directory, config_path);
     
     sprintf(config_path, "%s\\goodies.cfg", config_path);
     
@@ -716,7 +716,15 @@ int RunGoodies() {
         while (SDL_PollEvent(&event)) {
             eventloop:
             switch (event.type) {
-                case SDL_QUIT: { running = false; } break;
+                case SDL_QUIT: {
+                    if (server_process) {
+                        TerminateProcess(server_process, 0);
+                        CloseHandle(server_process);
+                        server_process = 0;
+                    }
+
+                    running = false;
+                } break;
                 case SDL_TEXTINPUT: {
                     typed_this_frame = true;
                     text_input_this_frame = *event.text.text;
@@ -803,7 +811,7 @@ int RunGoodies() {
                                 editing_field->focus = false;
                                 editing_field = null;
                             } else {
-                                OpenSelectedLinksNoChildren(start_link);
+                                OpenSelectedLinksNoChildren();
                             }
                         } break;
                         
@@ -872,6 +880,12 @@ int RunGoodies() {
                         case SDLK_s: {
                             if (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL])
                                 SaveToFile();
+                        } break;
+
+                        case SDLK_p: {
+                            char server_dir[MAX_PATH] = {};
+                            sprintf(server_dir, "%s\\goodies_server\\", config_directory);
+                            StartServer(server_dir);
                         } break;
                     }
                 } break;
@@ -1038,7 +1052,7 @@ int RunGoodies() {
         if (selection.link_count) {
             TextDrawData text_data = {};
             strcpy(text_data.id, "ret");
-            strcpy(text_data.string, "Press ENTER to Open Selection");
+            strcpy(text_data.string, "Press ENTER to Open Selection / Press P to open in Python Server");
             text_data.font = font;
             
             int w, h;
