@@ -69,7 +69,7 @@ ButtonResult TickButton(Button *button, int x, int y) {
     ButtonResult result = {};
     
     SDL_Point ms = {mx, my};
-    SDL_Rect rect = {x, y - (int)view_y, button->w, button->h};
+    SDL_Rect rect = {x, y, button->w, button->h};
     
     if (PointIntersectsWithRect(ms, rect)) {
         result.highlighted = true;

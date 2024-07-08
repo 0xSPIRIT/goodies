@@ -381,7 +381,7 @@ int DrawLink(Link *link, int x, int y) {
         SDL_Color col = CustomColor(CustomOption::AccentColor);
         SDL_SetTextureColorMod(b.texture, col.r, col.g, col.b);
  
-        if (TickButton(&b, end_x, y-plus_h/2+height/2).clicked) {
+        if (TickButton(&b, end_x, (int)(y-view_y-b.h/2+height/2)).clicked) {
             MenuOperation operation = {};
             operation.op = OnLink;
             operation.hover.link = link;
