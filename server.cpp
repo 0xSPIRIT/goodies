@@ -143,7 +143,7 @@ void StartServer(const char *server_path) {
         char server_working_directory[MAX_PATH] = {};
         strcpy(server_working_directory, server_path);
 
-        char command_line[] = "py -m http.server 6942";
+        char command_line[] = "python -m http.server 6942";
         int ok = CreateProcessA(NULL,
                                 command_line,
                                 NULL,
@@ -157,7 +157,7 @@ void StartServer(const char *server_path) {
         server_process = pi.hProcess;
 
         if (!ok) {
-            MessageBoxA(0, "Goodies expects python to be in the PATH as \"py\"", "Couldn't find python", MB_OK | MB_ICONERROR);
+            MessageBoxA(0, "Goodies expects python to be in the PATH as \"python\"", "Couldn't find python", MB_OK | MB_ICONERROR);
             return;
         }
     }
