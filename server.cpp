@@ -143,8 +143,6 @@ void StartServer(const char *server_path) {
         char server_working_directory[MAX_PATH] = {};
         strcpy(server_working_directory, server_path);
 
-        printf("Server working dir is %s\n", server_working_directory);
-
         char command_line[] = "py -m http.server 6942";
         int ok = CreateProcessA(NULL,
                                 command_line,

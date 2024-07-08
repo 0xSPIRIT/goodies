@@ -70,7 +70,7 @@ static int link_count = 0;
 
 static char filepath[MAX_PATH] = {};
 
-static float view_y = 0, view_to_y = 0;
+static float view_y = 0, view_to_y = 0, view_to_y_prev = 0;
 static float scroll_speed = 60;
 static float scroll_t = 0.25f; // The t value used in the scroll lerp
 
@@ -712,8 +712,10 @@ int RunGoodies() {
         
         if (has_event_queued)
             goto eventloop;
-        
+
         while (SDL_PollEvent(&event)) {
+            view_to_y_prev = view_to_y;
+        
             eventloop:
             switch (event.type) {
                 case SDL_QUIT: {
@@ -989,12 +991,19 @@ int RunGoodies() {
                         view_to_y -= scroll_speed * event.wheel.y;
                 } break;
             }
+
+            float delta_view_y = view_to_y - view_to_y_prev;
+
+            if (selection.active) {
+                selection.stored_y -= (int)delta_view_y;
+            }
         }
-        
+
         pmx = mx;
         pmy = my;
         mouse = SDL_GetMouseState(&mx, &my);
         keys = SDL_GetKeyboardState(0);
+
         
         view_y = lerp(view_y, view_to_y, scroll_t);
         
